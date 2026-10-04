@@ -7,7 +7,7 @@ SRC_FILES := $(shell find . -maxdepth 2 -type f -name "*.c")
 HDR_FILES := $(shell find . -maxdepth 2 -type f -name "*.h")
 ALL_FILES := $(SRC_FILES) $(HDR_FILES)
 
-.PHONY: all clean format check-format cppcheck valgrind
+.PHONY: all clean format check-format cppcheck valgrind doc
 
 all: $(TARGET)
 
@@ -44,5 +44,13 @@ valgrind: $(TARGET)
 		echo "Varovanie: valgrind nie je nainstalovany v systeme"; \
 	fi
 
+doc:
+	@if command -v doxygen >/dev/null 2>&1; then \
+		doxygen Doxyfile; \
+		echo "Dokumentacia bola vygenerovana v zlozke doc/"; \
+	else \
+		echo "Varovanie: doxygen nie je nainstalovany v systeme"; \
+	fi
+
 clean:
-	rm -f $(TARGET)
+	rm -rf $(TARGET) doc
