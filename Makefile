@@ -11,7 +11,7 @@ ALL_FILES := $(SRC_FILES) $(HDR_FILES)
 
 all: $(TARGET)
 
-$(TARGET): $(SRC_FILES)
+$(TARGET): $(SRC_FILES) $(HDR_FILES)
 	$(CC) $(CFLAGS) $(SRC_FILES) -o $(TARGET)
 
 format:
