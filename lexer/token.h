@@ -1,10 +1,13 @@
 /**
+@file token.h
 @author Michal Caban
 @brief Tento subor obsahuje struktury pre token
 */
 
 #ifndef TOKEN_H
 #define TOKEN_H
+
+#include <stddef.h>
 
 // Definicia vsetkych typov tokenov ktore mozu existovat
 typedef enum {
@@ -42,13 +45,13 @@ typedef enum {
     TOKEN_IDENT, // [a-zA-Z_][a-zA-Z0-9_]*
 
     // Literaly
-    TOKEN_INT,          // Int
-    TOKEN_DOUBLEL,      // Double
-    TOKEN_STRING,       // String
+    TOKEN_INT_LITERAL,          // Int
+    TOKEN_DOUBLE_LITERAL,      // Double
+    TOKEN_STRING_LITERAL,       // String
     TOKEN_INTERPOLATED, // Interpolovaný String s"..."
-    TOKEN_TRUE,         // true
-    TOKEN_FALSE,        // false
-    TOKEN_UNIT,         // ()
+    TOKEN_TRUE_LITERAL,         // true
+    TOKEN_FALSE_LITERAL,        // false
+    TOKEN_UNIT_LITERAL,         // ()
 
     // Aritmeticke operatory
     TOKEN_PLUS,  // +
