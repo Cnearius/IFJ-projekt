@@ -29,16 +29,6 @@ typedef enum {
 
     // Klucove slova v rozsireniach
     TOKEN_BOOL,      // Boolean (BOOLTHEN)
-    TOKEN_CASE,      // case (ALGEBDT)
-    TOKEN_CLASS,     // class (ALGEBDT)
-    TOKEN_EXTENSION, // extension (EXTKW)
-    TOKEN_FOR,       // for (CONTROL)
-    TOKEN_LIST,      // List (LISTS)
-    TOKEN_MATCH,     // match (ALGEBDT)
-    TOKEN_TYPE,      // type (ALGEBDT)
-    TOKEN_TO,        // to (CONTROL)
-    TOKEN_UNTIL,     // until (CONTROL)
-    TOKEN_BY,        // by (CONTROL)
 
     // Specialne symboly a identifikatory
     TOKEN_MAIN,  // @main
@@ -73,10 +63,7 @@ typedef enum {
     TOKEN_OR,  // ||
 
     // Specialne operatory pre rozsirenia
-    TOKEN_CONCAT_LIST, // ++ (LISTS)
-    TOKEN_ARROW,       // => (LAMBDAS, ALGEBDT)
-    TOKEN_LEFT_ARROW,  // <- (CONTROL)
-    TOKEN_PIPE,        // | (ALGEBDT)
+    TOKEN_ARROW,       // => (LAMBDAS)
 
     // Separatory a zatvorky
     TOKEN_ASSIGN,    // =
