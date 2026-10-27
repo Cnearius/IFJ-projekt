@@ -64,8 +64,8 @@ TEST(LexerBasic, EmptyInput) {
     LexerFree(lexer);
     fclose(input_file);
 }
-
-/** Jednoduche cele cislo. */
+// ===== Testy pre cele cisla =====
+/** Jednoduche cele cislo */
 TEST(LexerInt, Basic) {
     ExpectedTokens("42", {{TOKEN_INT_LITERAL, "42"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
 }
@@ -147,4 +147,143 @@ TEST(LexerInt, LargeNumber) {
     ExpectedTokens(
         "54236985214785",
         {{TOKEN_INT_LITERAL, "54236985214785"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+// ===== Testy pre desatinne cisla =====
+/**Zakladne desatinne cislo*/
+TEST(LexerDouble, BasicDoubleNumber) {
+    ExpectedTokens("3.14",
+                   {{TOKEN_DOUBLE_LITERAL, "3.14"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Cela cast je nula*/
+TEST(LexerDouble, WholeNumberZero) {
+    ExpectedTokens("0.17",
+                   {{TOKEN_DOUBLE_LITERAL, "0.17"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Cela cast desatinneho cisla moze chybat*/
+TEST(LexerDouble, NonWholeNumber) {
+    ExpectedTokens(".58963",
+                   {{TOKEN_DOUBLE_LITERAL, ".58963"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Druha moznost zapisu : cela cast a exponent bez bodky*/
+TEST(LexerDouble, WholeNumberPlusExponentWithoutDot) {
+    ExpectedTokens("7e25",
+                   {{TOKEN_DOUBLE_LITERAL, "7e25"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Velke E*/
+TEST(LexerDouble, UppercaseE) {
+    ExpectedTokens("7E25",
+                   {{TOKEN_DOUBLE_LITERAL, "7E25"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Exponent so znamienkom "+"*/
+TEST(LexerDouble, ExponentWithSign) {
+    ExpectedTokens("9e+89",
+                   {{TOKEN_DOUBLE_LITERAL, "9e+89"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Bodka, exponent aj znamienko "-"*/
+TEST(LexerDouble, DotExponentSign) {
+    ExpectedTokens("3.4e-71",
+                   {{TOKEN_DOUBLE_LITERAL, "3.4e-71"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Exponent bez celej casti*/
+TEST(LexerDouble, ExponentWithoutWholeNumber) {
+    ExpectedTokens(".5e10",
+                   {{TOKEN_DOUBLE_LITERAL, ".5e10"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Pripona "d"*/
+TEST(LexerDouble, SuffixLowerD) {
+    ExpectedTokens("9.4d",
+                   {{TOKEN_DOUBLE_LITERAL, "9.4d"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Pripona "D"*/
+TEST(LexerDouble, SuffixUpperD) {
+    ExpectedTokens("9.4D",
+                   {{TOKEN_DOUBLE_LITERAL, "9.4D"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Exponent s priponou*/
+TEST(LexerDouble, ExponentWithSuffix) {
+    ExpectedTokens(
+        "9e45555d",
+        {{TOKEN_DOUBLE_LITERAL, "9e45555d"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Podciarkniky v oboch castiach*/
+TEST(LexerDouble, UnderscoreInBothParts) {
+    ExpectedTokens(
+        "222_111.333_444",
+        {{TOKEN_DOUBLE_LITERAL, "222_111.333_444"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Podciarknik v exponente*/
+TEST(LexerDouble, UnderscoreInExponent) {
+    ExpectedTokens(
+        "222.111e333_444",
+        {{TOKEN_DOUBLE_LITERAL, "222.111e333_444"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Za exponent musi ist aspon 1 cislica*/
+TEST(LexerDouble, AtLeastOneDigitAfterExponent) { ExpectedTokens("48e", {}, 1); }
+
+/**Za exponent musi ist aspon 1 cislica*/
+TEST(LexerDouble, AtLeastOneDigitAfterExponentDouble) { ExpectedTokens("4.8e", {}, 1); }
+
+/**Za znamienko musi ist aspon 1 cislica*/
+TEST(LexerDouble, AtLeastOneDigitAfterSign) { ExpectedTokens("48e+", {}, 1); }
+
+/**Podciarknik na konci*/
+TEST(LexerDouble, UnderscoreAtTheEnd) { ExpectedTokens("4.5_", {}, 1); }
+
+/**Podciarknik nie je medzi cislicami ale pred bodkou*/
+TEST(LexerDouble, UnderscoreBeforeDot) { ExpectedTokens("4_.3", {}, 1); }
+
+/**Za bodkou musi byt cislica (ale toto nieje double)*/
+TEST(LexerDouble, NoDigitAfterDot) {
+    ExpectedTokens(
+        "222.",
+        {{TOKEN_INT_LITERAL, "222"}, {TOKEN_DOT, "."}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Za bodkou musi byt cislica (ale toto nieje double)*/
+TEST(LexerDouble, NoDigitAfterDotNonDouble) {
+    ExpectedTokens("222.z", {{TOKEN_INT_LITERAL, "222"},
+                             {TOKEN_DOT, "."},
+                             {TOKEN_IDENT, "z"},
+                             {TOKEN_EOL, nullptr},
+                             {TOKEN_EOF, nullptr}});
+}
+
+/**Prve cislo konci pri druhej bodke, .5 je nove cislo*/
+TEST(LexerDouble, TwoDoubleNumbers) {
+    ExpectedTokens("1.5.5", {{TOKEN_DOUBLE_LITERAL, "1.5"},
+                             {TOKEN_DOUBLE_LITERAL, ".5"},
+                             {TOKEN_EOL, nullptr},
+                             {TOKEN_EOF, nullptr}});
+}
+
+/**Negative Number*/
+TEST(LexerDouble, NegativeNumber) {
+    ExpectedTokens("-1.5", {{TOKEN_MINUS, "-"},
+                            {TOKEN_DOUBLE_LITERAL, "1.5"},
+                            {TOKEN_EOL, nullptr},
+                            {TOKEN_EOF, nullptr}});
+}
+
+/**Pouzitie v prikaze*/
+TEST(LexerDouble, UseInCommand) {
+    ExpectedTokens("val z = 1.152", {{TOKEN_VAL, "val"},
+                                     {TOKEN_IDENT, "z"},
+                                     {TOKEN_ASSIGN, "="},
+                                     {TOKEN_DOUBLE_LITERAL, "1.152"},
+                                     {TOKEN_EOL, nullptr},
+                                     {TOKEN_EOF, nullptr}});
 }
