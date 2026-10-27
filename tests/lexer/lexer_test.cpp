@@ -287,3 +287,117 @@ TEST(LexerDouble, UseInCommand) {
                                      {TOKEN_EOL, nullptr},
                                      {TOKEN_EOF, nullptr}});
 }
+
+// ===== Testy pre identifikatory a klucove slova =====
+/**Najkratsi indentifikator*/
+TEST(LexerIdent, ShortestIdentifier) {
+    ExpectedTokens("x", {{TOKEN_IDENT, "x"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Pismena aj cislice*/
+TEST(LexerIdent, CharsAndNumbers) {
+    ExpectedTokens("myVar543",
+                   {{TOKEN_IDENT, "myVar543"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Zacina sa "_" */
+TEST(LexerIdent, UnderscoreBeginning) {
+    ExpectedTokens("_Var541",
+                   {{TOKEN_IDENT, "_Var541"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Viac "_" na zaciatku */
+TEST(LexerIdent, MultipleUnderscoresAtTheBeginning) {
+    ExpectedTokens("___z", {{TOKEN_IDENT, "___z"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** "_" na konci */
+TEST(LexerIdent, UnderscoreAtTheEnd) {
+    ExpectedTokens("z_", {{TOKEN_IDENT, "z_"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Samotne "_" nieje ident */
+TEST(LexerIdent, UnderscoreOnly) {
+    ExpectedTokens("_", {{TOKEN_WILDCARD, "_"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Test pre vsetky klucove slova naraz */
+TEST(LexerIdent, AllKeyWords) {
+    ExpectedTokens(
+        "def do Double else if import Int return String then Unit val var while Boolean true false",
+        {{TOKEN_DEF, "def"},
+         {TOKEN_DO, "do"},
+         {TOKEN_DOUBLE, "Double"},
+         {TOKEN_ELSE, "else"},
+         {TOKEN_IF, "if"},
+         {TOKEN_IMPORT, "import"},
+         {TOKEN_INT, "Int"},
+         {TOKEN_RETURN, "return"},
+         {TOKEN_STRING, "String"},
+         {TOKEN_THEN, "then"},
+         {TOKEN_UNIT, "Unit"},
+         {TOKEN_VAL, "val"},
+         {TOKEN_VAR, "var"},
+         {TOKEN_WHILE, "while"},
+         {TOKEN_BOOL, "Boolean"},
+         {TOKEN_TRUE_LITERAL, "true"},
+         {TOKEN_FALSE_LITERAL, "false"},
+         {TOKEN_EOL, nullptr},
+         {TOKEN_EOF, nullptr}});
+}
+
+/** Velke/male pismena (Val != val) */
+TEST(LexerIdent, UpperCaseVal) {
+    ExpectedTokens("Val", {{TOKEN_IDENT, "Val"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Velke/male pismena (Int != int) */
+TEST(LexerIdent, LowerCaseInt) {
+    ExpectedTokens("int", {{TOKEN_IDENT, "int"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Velke/male pismena (Double != double) */
+TEST(LexerIdent, LowerCaseDouble) {
+    ExpectedTokens("double",
+                   {{TOKEN_IDENT, "double"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Zacina na def ale je to ine slovo */
+TEST(LexerIdent, Define) {
+    ExpectedTokens("define", {{TOKEN_IDENT, "define"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** iff nie je klucove slovo if */
+TEST(LexerIdent, Iff) {
+    ExpectedTokens("iff", {{TOKEN_IDENT, "iff"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Anotacia hlavnej funkcie */
+TEST(LexerIdent, MainFunctionAnnotation) {
+    ExpectedTokens("@main", {{TOKEN_MAIN, "@main"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Anotacia hlavnej funkcie na rovnakom riadku ako def */
+TEST(LexerIdent, MainFunctionAnnotationSameLineAsDef) {
+    ExpectedTokens(
+        "@main def",
+        {{TOKEN_MAIN, "@main"}, {TOKEN_DEF, "def"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Medzi @ a main nesmie byt ziadny znak */
+TEST(LexerIdent, NoCharBetween) { ExpectedTokens("@ main", {}, 1); }
+
+/** Case sensitive */
+TEST(LexerIdent, CaseSensitive) { ExpectedTokens("@Main", {}, 1); }
+
+/** Ine slovo ako main */
+TEST(LexerIdent, DifferentWord) { ExpectedTokens("@mainz", {}, 1); }
+
+/** @ sa inde nepouziva */
+TEST(LexerIdent, AtOnlyUsedInMain) { ExpectedTokens("@", {}, 1); }
+
+/** Neznamy znak*/
+TEST(LexerIdent, UnknownCharDollar) { ExpectedTokens("$x", {}, 1); }
+
+/** Neznamy znak*/
+TEST(LexerIdent, UnknownCharHashtag) { ExpectedTokens("#", {}, 1); }
