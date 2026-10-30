@@ -689,3 +689,150 @@ TEST(LexerStrings, StringInCommand) {
                                        {TOKEN_EOL, nullptr},
                                        {TOKEN_EOF, nullptr}});
 }
+
+// ===== Testy pre komentare =====
+/** Riadkovy komentar za kodom */
+TEST(LexerComments, LineCommentAfterCode) {
+    ExpectedTokens("x // komentar",
+                   {{TOKEN_IDENT, "x"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Riadok na ktorom je len komentar sa ignoruje */
+TEST(LexerComments, CommentOnlyLine) { ExpectedTokens("// len komentar", {{TOKEN_EOF, nullptr}}); }
+
+/** Komentar konci na konci riadku */
+TEST(LexerComments, EndOfLineComment) {
+    ExpectedTokens("x // k\ny", {
+                                    {TOKEN_IDENT, "x"},
+                                    {TOKEN_EOL, nullptr},
+                                    {TOKEN_IDENT, "y"},
+                                    {TOKEN_EOL, nullptr},
+                                    {TOKEN_EOF, nullptr},
+                                });
+}
+
+/** Blokovy komentar bez noveho riadku = medzera */
+TEST(LexerComments, BlockCommentNoNewLine) {
+    ExpectedTokens("x /* k */ y", {
+                                      {TOKEN_IDENT, "x"},
+                                      {TOKEN_IDENT, "y"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_EOF, nullptr},
+                                  });
+}
+
+/** Prazdny komentar bez medzier oddeluje tokeny */
+TEST(LexerComments, EmptyCommentNoSpace) {
+    ExpectedTokens("x/**/y", {
+                                 {TOKEN_IDENT, "x"},
+                                 {TOKEN_IDENT, "y"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_EOF, nullptr},
+                             });
+}
+
+/** Len Komentar */
+TEST(LexerComments, CommentOnly) {
+    ExpectedTokens("/* k */", {
+                                  {TOKEN_EOF, nullptr},
+                              });
+}
+
+/** Vnoreny komentar */
+TEST(LexerComments, NestedComment) {
+    ExpectedTokens("x /* a /* b */ c */ y", {
+                                                {TOKEN_IDENT, "x"},
+                                                {TOKEN_IDENT, "y"},
+                                                {TOKEN_EOL, nullptr},
+                                                {TOKEN_EOF, nullptr},
+                                            });
+}
+
+/** // vo vnutri blokoveho komentara neznamena nic */
+TEST(LexerComments, SlashInComment) {
+    ExpectedTokens("x /* // */ y", {
+                                       {TOKEN_IDENT, "x"},
+                                       {TOKEN_IDENT, "y"},
+                                       {TOKEN_EOL, nullptr},
+                                       {TOKEN_EOF, nullptr},
+                                   });
+}
+
+/** Zaciatok blokoveho komentara v riadkovom komentari nic neznamena */
+TEST(LexerComments, BlockStartInLineComment) {
+    ExpectedTokens("x // a /* b", {
+                                      {TOKEN_IDENT, "x"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_EOF, nullptr},
+                                  });
+}
+
+/** * / s medzerou nie je koniec komentara */
+TEST(LexerComments, SpacedStarSlash) {
+    ExpectedTokens("/* * / */", {
+                                    {TOKEN_EOF, nullptr},
+                                });
+}
+
+/** 3 rozne tokeny  */
+TEST(LexerComments, ThreeStars) {
+    ExpectedTokens("/***/", {
+                                {TOKEN_EOF, nullptr},
+                            });
+}
+
+/** Komentar s novym riadkom je koniec riadku  */
+TEST(LexerComments, MultiLineBlockComment) {
+    ExpectedTokens("x /* a\nb */", {
+                                       {TOKEN_IDENT, "x"},
+                                       {TOKEN_EOL, nullptr},
+                                       {TOKEN_EOF, nullptr},
+                                   });
+}
+
+/** Po viacriadkovom komentari pokracuje kod na dalsom riadku  */
+TEST(LexerComments, CodeAfterMultiLineComment) {
+    ExpectedTokens("/* a\nb */\nx", {
+                                        {TOKEN_IDENT, "x"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_EOF, nullptr},
+                                    });
+}
+
+/** Za komentarom s novym riadkom nesmie byt token na tom istom riadku */
+TEST(LexerComments, TokenAfterMultiLineComment) {
+    ExpectedTokens("x /* a\nb */ y",
+                   {
+                       {TOKEN_IDENT, "x"},
+                   },
+                   1);
+}
+
+/** Neukonceny komentar */
+TEST(LexerComments, UnterminatedBlock) { ExpectedTokens("/* neukonceny", {}, 1); }
+
+/** Vnoreny a neukonceny */
+TEST(LexerComments, UnterminatedNested) { ExpectedTokens("/* a /* b */", {}, 1); }
+
+/** jedno / je delenie nie komentar */
+TEST(LexerComments, SlashIsDivision) {
+    ExpectedTokens("a/b", {
+                              {TOKEN_IDENT, "a"},
+                              {TOKEN_DIV, "/"},
+                              {TOKEN_IDENT, "b"},
+                              {TOKEN_EOL, nullptr},
+                              {TOKEN_EOF, nullptr},
+                          });
+}
+
+/** Hviezdicka a lomitko bez zaciatku nie su komentar ale dva operatory */
+TEST(LexerComments, CloseWithoutOpen) {
+    ExpectedTokens("x */ c", {
+                                 {TOKEN_IDENT, "x"},
+                                 {TOKEN_MUL, "*"},
+                                 {TOKEN_DIV, "/"},
+                                 {TOKEN_IDENT, "c"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_EOF, nullptr},
+                             });
+}
