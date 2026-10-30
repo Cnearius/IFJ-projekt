@@ -566,3 +566,126 @@ TEST(LexerOperators, CurlyBracketClose) { ExpectedTokens("}", {}, 1); }
 
 /** Modulo neexistuje*/
 TEST(LexerOperators, Modulo) { ExpectedTokens("%", {}, 1); }
+
+// ===== Testy retazce =====
+/** Zakladny retazec */
+TEST(LexerStrings, BasicString) {
+    ExpectedTokens(R"("ahoj")",
+                   {{TOKEN_STRING_LITERAL, "ahoj"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Prazdny retazec */
+TEST(LexerStrings, EmptyString) {
+    ExpectedTokens(R"("")",
+                   {{TOKEN_STRING_LITERAL, ""}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Medzery sa zachovavaju */
+TEST(LexerStrings, Spaces) {
+    ExpectedTokens(R"("a b c")",
+                   {{TOKEN_STRING_LITERAL, "a b c"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Platna escape sekvencia */
+TEST(LexerStrings, ValidEscapeSequence) {
+    ExpectedTokens(R"("\\")",
+                   {{TOKEN_STRING_LITERAL, nullptr}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** \" retazec neukoncí*/
+TEST(LexerStrings, WontEndString) {
+    ExpectedTokens(R"("\"")",
+                   {{TOKEN_STRING_LITERAL, nullptr}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Dalsie platne escape */
+TEST(LexerStrings, AnotherValidEscape) {
+    ExpectedTokens(R"("\t\r")",
+                   {{TOKEN_STRING_LITERAL, nullptr}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Neplatna escape sekvencia */
+TEST(LexerStrings, NonValidEscapeSequence) { ExpectedTokens(R"("\q")", {}, 1); }
+
+/** Ina neplatna escape sekvencia */
+TEST(LexerStrings, DifferentNonValidExcapeSequence) { ExpectedTokens(R"("\x41")", {}, 1); }
+
+/** Neukonceny retazec */
+TEST(LexerStrings, NonEndingString) { ExpectedTokens(R"("ahoj)", {}, 1); }
+
+/** Zamerne nie raw string */
+TEST(LexerStrings, NonRawString) { ExpectedTokens("\"a\nb\"", {}, 1); }
+
+/** Retazec zostane neukonceny */
+TEST(LexerStrings, NonEndingEscapeString) { ExpectedTokens(R"("ab\")", {}, 1); }
+
+/** Viacriadkovy */
+TEST(LexerStrings, MultiLine) {
+    ExpectedTokens(R"("""abc""")",
+                   {{TOKEN_STRING_LITERAL, "abc"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Prazdny viacriadkovy */
+TEST(LexerStrings, EmptyMultiLine) {
+    ExpectedTokens(R"("""""")",
+                   {{TOKEN_STRING_LITERAL, ""}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Skutocny novy riadok */
+TEST(LexerStrings, RealNewLine) {
+    ExpectedTokens("\"\"\"a\nb\"\"\"",
+                   {{TOKEN_STRING_LITERAL, "a\nb"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** jedna " vo vnutri nekonci */
+TEST(LexerStrings, OneQuotationMark) {
+    ExpectedTokens(R"("""a"b""")",
+                   {{TOKEN_STRING_LITERAL, R"(a"b)"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** dve " vo vnutri nekonci */
+TEST(LexerStrings, TwoQuotationMark) {
+    ExpectedTokens(R"("""a""b""")",
+                   {{TOKEN_STRING_LITERAL, R"(a""b)"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Neukonecny viacriadkovy */
+TEST(LexerStrings, NonEndingMultiLine) { ExpectedTokens(R"("""abc)", {}, 1); }
+
+/** Spajanie retazcov */
+TEST(LexerStrings, StringConcatenation) {
+    ExpectedTokens(R"("a"+"b")", {{TOKEN_STRING_LITERAL, "a"},
+                                  {TOKEN_PLUS, "+"},
+                                  {TOKEN_STRING_LITERAL, "b"},
+                                  {TOKEN_EOL, nullptr},
+                                  {TOKEN_EOF, nullptr}});
+}
+
+/** Znaky ktore su mimo retazca chybou su vo vnutri v poriadku */
+TEST(LexerStrings, InvalidCharsInside) {
+    ExpectedTokens(
+        R"("#$%@{}")",
+        {{TOKEN_STRING_LITERAL, R"(#$%@{})"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** // v retazci nie je komentar */
+TEST(LexerStrings, NotAComment) {
+    ExpectedTokens(R"("//x")",
+                   {{TOKEN_STRING_LITERAL, "//x"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Blokovy komentar v retazci nie je komentar */
+TEST(LexerStrings, AlsoNotAComment) {
+    ExpectedTokens(R"("/*x*/")",
+                   {{TOKEN_STRING_LITERAL, "/*x*/"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Retazec v prikaze */
+TEST(LexerStrings, StringInCommand) {
+    ExpectedTokens(R"(val s = "hi")", {{TOKEN_VAL, "val"},
+                                       {TOKEN_IDENT, "s"},
+                                       {TOKEN_ASSIGN, "="},
+                                       {TOKEN_STRING_LITERAL, "hi"},
+                                       {TOKEN_EOL, nullptr},
+                                       {TOKEN_EOF, nullptr}});
+}
