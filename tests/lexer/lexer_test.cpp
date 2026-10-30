@@ -358,8 +358,7 @@ TEST(LexerIdent, LowerCaseInt) {
 
 /** Velke/male pismena (Double != double) */
 TEST(LexerIdent, LowerCaseDouble) {
-    ExpectedTokens("double",
-                   {{TOKEN_IDENT, "double"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+    ExpectedTokens("double", {{TOKEN_IDENT, "double"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
 }
 
 /** Zacina na def ale je to ine slovo */
@@ -401,3 +400,169 @@ TEST(LexerIdent, UnknownCharDollar) { ExpectedTokens("$x", {}, 1); }
 
 /** Neznamy znak*/
 TEST(LexerIdent, UnknownCharHashtag) { ExpectedTokens("#", {}, 1); }
+
+// ===== Testy pre operatory a oddelovace =====
+/** Aritmeticke operatory*/
+TEST(LexerOperators, ArithmeticOperators) {
+    ExpectedTokens("+ - * /", {{TOKEN_PLUS, "+"},
+                               {TOKEN_MINUS, "-"},
+                               {TOKEN_MUL, "*"},
+                               {TOKEN_DIV, "/"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_EOF, nullptr}});
+}
+
+/** Relacne operatory*/
+TEST(LexerOperators, RelationalOperators) {
+    ExpectedTokens("== != < <= > >=", {{TOKEN_EQ, "=="},
+                                       {TOKEN_NEQ, "!="},
+                                       {TOKEN_LT, "<"},
+                                       {TOKEN_LTE, "<="},
+                                       {TOKEN_GT, ">"},
+                                       {TOKEN_GTE, ">="},
+                                       {TOKEN_EOL, nullptr},
+                                       {TOKEN_EOF, nullptr}});
+}
+
+/** Logicke (BOOLTHEN)*/
+TEST(LexerOperators, LogicalOperators) {
+    ExpectedTokens("! && ||", {{TOKEN_NOT, "!"},
+                               {TOKEN_AND, "&&"},
+                               {TOKEN_OR, "||"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_EOF, nullptr}});
+}
+
+/** Priradenie a sipka (LAMBDAS)*/
+TEST(LexerOperators, Lambdas) {
+    ExpectedTokens(
+        "= =>",
+        {{TOKEN_ASSIGN, "="}, {TOKEN_ARROW, "=>"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Oddelovace */
+TEST(LexerOperators, Separators) {
+    ExpectedTokens(": , . ;", {{TOKEN_COLON, ":"},
+                               {TOKEN_COMMA, ","},
+                               {TOKEN_DOT, "."},
+                               {TOKEN_SEMICOLON, ";"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_EOF, nullptr}});
+}
+
+/** Zatvorky */
+TEST(LexerOperators, Brackets) {
+    ExpectedTokens("( ) [ ]", {{TOKEN_LPAREN, "("},
+                               {TOKEN_RPAREN, ")"},
+                               {TOKEN_LBRACKET, "["},
+                               {TOKEN_RBRACKET, "]"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_EOF, nullptr}});
+}
+
+/**Bez medzier*/
+TEST(LexerOperators, NoSpace) {
+    ExpectedTokens("a<=b", {{TOKEN_IDENT, "a"},
+                            {TOKEN_LTE, "<="},
+                            {TOKEN_IDENT, "b"},
+                            {TOKEN_EOL, nullptr},
+                            {TOKEN_EOF, nullptr}});
+}
+
+/** < bez = za nim */
+TEST(LexerOperators, LtWithoutEqual) {
+    ExpectedTokens("a<b", {{TOKEN_IDENT, "a"},
+                           {TOKEN_LT, "<"},
+                           {TOKEN_IDENT, "b"},
+                           {TOKEN_EOL, nullptr},
+                           {TOKEN_EOF, nullptr}});
+}
+
+/** Porovnanie */
+TEST(LexerOperators, Compare) {
+    ExpectedTokens("a==b", {{TOKEN_IDENT, "a"},
+                            {TOKEN_EQ, "=="},
+                            {TOKEN_IDENT, "b"},
+                            {TOKEN_EOL, nullptr},
+                            {TOKEN_EOF, nullptr}});
+}
+
+/** Priradenie */
+TEST(LexerOperators, Assignment) {
+    ExpectedTokens("a=b", {{TOKEN_IDENT, "a"},
+                           {TOKEN_ASSIGN, "="},
+                           {TOKEN_IDENT, "b"},
+                           {TOKEN_EOL, nullptr},
+                           {TOKEN_EOF, nullptr}});
+}
+
+/** Nerovna sa */
+TEST(LexerOperators, NotEqual) {
+    ExpectedTokens("a!=b", {{TOKEN_IDENT, "a"},
+                            {TOKEN_NEQ, "!="},
+                            {TOKEN_IDENT, "b"},
+                            {TOKEN_EOL, nullptr},
+                            {TOKEN_EOF, nullptr}});
+}
+
+/** ! bez = za ním */
+TEST(LexerOperators, NotWithoutAssign) {
+    ExpectedTokens(
+        "!a", {{TOKEN_NOT, "!"}, {TOKEN_IDENT, "a"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Maximal munch: najprv <= potom =*/
+TEST(LexerOperators, MaximalMunch) {
+    ExpectedTokens(
+        "<==",
+        {{TOKEN_LTE, "<="}, {TOKEN_ASSIGN, "="}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Najprv == potom = */
+TEST(LexerOperators, EqAssign) {
+    ExpectedTokens(
+        "===", {{TOKEN_EQ, "=="}, {TOKEN_ASSIGN, "="}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Najprv != potom = */
+TEST(LexerOperators, NeqAssign) {
+    ExpectedTokens(
+        "!==",
+        {{TOKEN_NEQ, "!="}, {TOKEN_ASSIGN, "="}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** =< nie je operator takze dva tokeny */
+TEST(LexerOperators, NonOperator) {
+    ExpectedTokens(
+        "=<", {{TOKEN_ASSIGN, "="}, {TOKEN_LT, "<"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** -> nie je takze dva samostatne znaky */
+TEST(LexerOperators, Arrow) {
+    ExpectedTokens(
+        "->", {{TOKEN_MINUS, "-"}, {TOKEN_GT, ">"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** <- nie je takze dva samostatne znaky */
+TEST(LexerOperators, ReverseArrow) {
+    ExpectedTokens(
+        "<-", {{TOKEN_LT, "<"}, {TOKEN_MINUS, "-"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Samotne & neexistuje len &&*/
+TEST(LexerOperators, SingularAnd) { ExpectedTokens("&", {}, 1); }
+
+/** Samotne | neexistuje */
+TEST(LexerOperators, SingularOr) { ExpectedTokens("|", {}, 1); }
+
+/** Chyba az po platnom tokene */
+TEST(LexerOperators, ErrAfterToken) { ExpectedTokens("a&b", {{TOKEN_IDENT, "a"}}, 1); }
+
+/** Ziadne zlozene zatvorky*/
+TEST(LexerOperators, CurlyBracketOpen) { ExpectedTokens("{", {}, 1); }
+
+/** Ziadne zlozene zatvorky*/
+TEST(LexerOperators, CurlyBracketClose) { ExpectedTokens("}", {}, 1); }
+
+/** Modulo neexistuje*/
+TEST(LexerOperators, Modulo) { ExpectedTokens("%", {}, 1); }
