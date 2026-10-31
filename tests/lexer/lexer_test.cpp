@@ -98,6 +98,9 @@ TEST(LexerInt, UnderscoreBeginning) {
 /** Nenulove cislo nesmie zacinat nulou*/
 TEST(LexerInt, LeadingZeros) { ExpectedTokens("009", {}, 1); }
 
+/** Nula underscore nula : scala odmietla takze v ifj26 je to chyba */
+TEST(LexerInt, ZeroUnderscoreZero) { ExpectedTokens("0_0", {}, 1); }
+
 /** Nenulove cislo nesmie zacinat nulou*/
 TEST(LexerInt, LeadingZeroBiggerNumber) { ExpectedTokens("01954", {}, 1); }
 
@@ -229,6 +232,12 @@ TEST(LexerDouble, UnderscoreInExponent) {
     ExpectedTokens(
         "222.111e333_444",
         {{TOKEN_DOUBLE_LITERAL, "222.111e333_444"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/**Scala to prijma a gramatika zadania tiez (zakaz nuly na zaciatku len pri celych cislach)*/
+TEST(LexerDouble, LeadingZeroDouble) {
+    ExpectedTokens("01.5",
+                   {{TOKEN_DOUBLE_LITERAL, "01.5"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
 }
 
 /**Za exponent musi ist aspon 1 cislica*/
@@ -596,6 +605,12 @@ TEST(LexerStrings, ValidEscapeSequence) {
 TEST(LexerStrings, WontEndString) {
     ExpectedTokens(R"("\"")",
                    {{TOKEN_STRING_LITERAL, nullptr}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
+}
+
+/** Podla scaly ukoncia retazec posledne tri uvodzovky a stvrta patri do obsahu */
+TEST(LexerStrings, FourQuotesAtEnd) {
+    ExpectedTokens(R"("""abc"""")",
+                   {{TOKEN_STRING_LITERAL, R"(abc")"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
 }
 
 /** Dalsie platne escape */
