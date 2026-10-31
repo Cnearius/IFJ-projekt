@@ -65,6 +65,8 @@ TEST(LexerBasic, EmptyInput) {
     fclose(input_file);
 }
 // ===== Testy pre cele cisla =====
+// Testy Basic, Zero a Underscores vygenerovane AI (Claude) ako ukazkovy vzor.
+// Prompt: "napis mi nejake dva testy nech pochopim ako to funguje"
 /** Jednoduche cele cislo */
 TEST(LexerInt, Basic) {
     ExpectedTokens("42", {{TOKEN_INT_LITERAL, "42"}, {TOKEN_EOL, nullptr}, {TOKEN_EOF, nullptr}});
@@ -1086,6 +1088,9 @@ TEST(LexerIndent, TabAfterCode) {
 }
 
 // ===== Test celeho programu =====
+// Vstupny program a zoznam ocakavanych tokenov navrhla AI (Claude),
+// zoznam tokenov som prepisal a skontroloval sam.
+// Prompt: "daj mi test celeho programu"
 /** Maly program: prolog, funkcia, @main, if/else a odsadenie */
 TEST(LexerProgram, SmallProgram) {
     ExpectedTokens("import ifj26.*\n"
