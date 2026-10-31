@@ -1026,12 +1026,12 @@ TEST(LexerIndent, TabAfterSpaces) { ExpectedTokens("  \tx", {}, 1); }
 /** Riadok len s tabulatorom je prazdny riadok */
 TEST(LexerIndent, TabOnlyLineIgnored) {
     ExpectedTokens("x\n\t\ny", {
-                                 {TOKEN_IDENT, "x"},
-                                 {TOKEN_EOL, nullptr},
-                                 {TOKEN_IDENT, "y"},
-                                 {TOKEN_EOL, nullptr},
-                                 {TOKEN_EOF, nullptr},
-                             });
+                                   {TOKEN_IDENT, "x"},
+                                   {TOKEN_EOL, nullptr},
+                                   {TOKEN_IDENT, "y"},
+                                   {TOKEN_EOL, nullptr},
+                                   {TOKEN_EOF, nullptr},
+                               });
 }
 
 /** Dva prikazy na jednom riadku */
@@ -1068,4 +1068,86 @@ TEST(LexerIndent, TabAfterCode) {
                                    {TOKEN_EOL, nullptr},
                                    {TOKEN_EOF, nullptr},
                                });
+}
+
+// ===== Test celeho programu =====
+/** Maly program: prolog, funkcia, @main, if/else a odsadenie */
+TEST(LexerProgram, SmallProgram) {
+    ExpectedTokens("import ifj26.*\n"
+                   "\n"
+                   "def inc(n: Int): Int =\n"
+                   "  n + 1\n"
+                   "\n"
+                   "@main def run(): Unit =\n"
+                   "  val x = inc(41)\n"
+                   "  if x > 40 then\n"
+                   "    print(\"ok\")\n"
+                   "  else\n"
+                   "    print(\"no\")\n",
+                   {
+                       {TOKEN_IMPORT, "import"},
+                       {TOKEN_IDENT, "ifj26"},
+                       {TOKEN_DOT, "."},
+                       {TOKEN_MUL, "*"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_DEF, "def"},
+                       {TOKEN_IDENT, "inc"},
+                       {TOKEN_LPAREN, "("},
+                       {TOKEN_IDENT, "n"},
+                       {TOKEN_COLON, ":"},
+                       {TOKEN_INT, "Int"},
+                       {TOKEN_RPAREN, ")"},
+                       {TOKEN_COLON, ":"},
+                       {TOKEN_INT, "Int"},
+                       {TOKEN_ASSIGN, "="},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_INDENT, nullptr},
+                       {TOKEN_IDENT, "n"},
+                       {TOKEN_PLUS, "+"},
+                       {TOKEN_INT_LITERAL, "1"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_DEDENT, nullptr},
+                       {TOKEN_MAIN, "@main"},
+                       {TOKEN_DEF, "def"},
+                       {TOKEN_IDENT, "run"},
+                       {TOKEN_LPAREN, "("},
+                       {TOKEN_RPAREN, ")"},
+                       {TOKEN_COLON, ":"},
+                       {TOKEN_UNIT, "Unit"},
+                       {TOKEN_ASSIGN, "="},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_INDENT, nullptr},
+                       {TOKEN_VAL, "val"},
+                       {TOKEN_IDENT, "x"},
+                       {TOKEN_ASSIGN, "="},
+                       {TOKEN_IDENT, "inc"},
+                       {TOKEN_LPAREN, "("},
+                       {TOKEN_INT_LITERAL, "41"},
+                       {TOKEN_RPAREN, ")"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_IF, "if"},
+                       {TOKEN_IDENT, "x"},
+                       {TOKEN_GT, ">"},
+                       {TOKEN_INT_LITERAL, "40"},
+                       {TOKEN_THEN, "then"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_INDENT, nullptr},
+                       {TOKEN_IDENT, "print"},
+                       {TOKEN_LPAREN, "("},
+                       {TOKEN_STRING_LITERAL, "ok"},
+                       {TOKEN_RPAREN, ")"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_DEDENT, nullptr},
+                       {TOKEN_ELSE, "else"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_INDENT, nullptr},
+                       {TOKEN_IDENT, "print"},
+                       {TOKEN_LPAREN, "("},
+                       {TOKEN_STRING_LITERAL, "no"},
+                       {TOKEN_RPAREN, ")"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_DEDENT, nullptr},
+                       {TOKEN_DEDENT, nullptr},
+                       {TOKEN_EOF, nullptr},
+                   });
 }
