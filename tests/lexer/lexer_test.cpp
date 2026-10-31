@@ -836,3 +836,236 @@ TEST(LexerComments, CloseWithoutOpen) {
                                  {TOKEN_EOF, nullptr},
                              });
 }
+
+// ===== Testy odsadenia =====
+/** Dva riadky */
+TEST(LexerIndent, TwoLines) {
+    ExpectedTokens("x\ny", {
+                               {TOKEN_IDENT, "x"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_IDENT, "y"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_EOF, nullptr},
+                           });
+}
+
+/** Prazdny riadok neznamena druhe End of line */
+TEST(LexerIndent, EmptyLineIgnored) {
+    ExpectedTokens("x\n\ny", {
+                                 {TOKEN_IDENT, "x"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_IDENT, "y"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_EOF, nullptr},
+                             });
+}
+
+/** Riadok len s medzerami sa ignoruje */
+TEST(LexerIndent, SpacesOnlyLineIgnored) {
+    ExpectedTokens("x\n    \ny", {
+                                     {TOKEN_IDENT, "x"},
+                                     {TOKEN_EOL, nullptr},
+                                     {TOKEN_IDENT, "y"},
+                                     {TOKEN_EOL, nullptr},
+                                     {TOKEN_EOF, nullptr},
+                                 });
+}
+
+/** Novy riadok na konci neda druhe End of line */
+TEST(LexerIndent, NewLineAtEnd) {
+    ExpectedTokens("x\n", {
+                              {TOKEN_IDENT, "x"},
+                              {TOKEN_EOL, nullptr},
+                              {TOKEN_EOF, nullptr},
+                          });
+}
+
+/** Prazdne riadky na zaciatku */
+TEST(LexerIndent, EmptyLinesAtStart) {
+    ExpectedTokens("\n\nx", {
+                                {TOKEN_IDENT, "x"},
+                                {TOKEN_EOL, nullptr},
+                                {TOKEN_EOF, nullptr},
+                            });
+}
+
+/** DEDENT na konci suboru */
+TEST(LexerIndent, IndentThenEof) {
+    ExpectedTokens("x\n  y", {
+                                 {TOKEN_IDENT, "x"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_INDENT, nullptr},
+                                 {TOKEN_IDENT, "y"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_DEDENT, nullptr},
+                                 {TOKEN_EOF, nullptr},
+                             });
+}
+
+/** Navrat spat */
+TEST(LexerIndent, IndentThenBack) {
+    ExpectedTokens("x\n  y\nz", {
+                                    {TOKEN_IDENT, "x"},
+                                    {TOKEN_EOL, nullptr},
+                                    {TOKEN_INDENT, nullptr},
+                                    {TOKEN_IDENT, "y"},
+                                    {TOKEN_EOL, nullptr},
+                                    {TOKEN_DEDENT, nullptr},
+                                    {TOKEN_IDENT, "z"},
+                                    {TOKEN_EOL, nullptr},
+                                    {TOKEN_EOF, nullptr},
+                                });
+}
+
+/** Rovnake odsadenie = ziadny novy ident */
+TEST(LexerIndent, SameIndent) {
+    ExpectedTokens("x\n  y\n  z", {
+                                      {TOKEN_IDENT, "x"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_INDENT, nullptr},
+                                      {TOKEN_IDENT, "y"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_IDENT, "z"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_DEDENT, nullptr},
+                                      {TOKEN_EOF, nullptr},
+                                  });
+}
+
+/** Navrat o dve urovne */
+TEST(LexerIndent, DoubleDedent) {
+    ExpectedTokens("x\n  y\n    z\nw", {
+                                           {TOKEN_IDENT, "x"},
+                                           {TOKEN_EOL, nullptr},
+                                           {TOKEN_INDENT, nullptr},
+                                           {TOKEN_IDENT, "y"},
+                                           {TOKEN_EOL, nullptr},
+                                           {TOKEN_INDENT, nullptr},
+                                           {TOKEN_IDENT, "z"},
+                                           {TOKEN_EOL, nullptr},
+                                           {TOKEN_DEDENT, nullptr},
+                                           {TOKEN_DEDENT, nullptr},
+                                           {TOKEN_IDENT, "w"},
+                                           {TOKEN_EOL, nullptr},
+                                           {TOKEN_EOF, nullptr},
+                                       });
+}
+
+/** Dva otvorene bloky na konci */
+TEST(LexerIndent, DoubleDedentAtEof) {
+    ExpectedTokens("x\n  y\n    z", {
+                                        {TOKEN_IDENT, "x"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_INDENT, nullptr},
+                                        {TOKEN_IDENT, "y"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_INDENT, nullptr},
+                                        {TOKEN_IDENT, "z"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_DEDENT, nullptr},
+                                        {TOKEN_DEDENT, nullptr},
+                                        {TOKEN_EOF, nullptr},
+                                    });
+}
+
+/** Prazdny riadok neukonci blok */
+TEST(LexerIndent, EmptyLineInsideBlock) {
+    ExpectedTokens("x\n  y\n\n  z", {
+                                        {TOKEN_IDENT, "x"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_INDENT, nullptr},
+                                        {TOKEN_IDENT, "y"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_IDENT, "z"},
+                                        {TOKEN_EOL, nullptr},
+                                        {TOKEN_DEDENT, nullptr},
+                                        {TOKEN_EOF, nullptr},
+                                    });
+}
+
+/** Odsadeny komentar nevyvola INDENT */
+TEST(LexerIndent, IndentedCommentIgnored) {
+    ExpectedTokens("x\n  // c\ny", {
+                                       {TOKEN_IDENT, "x"},
+                                       {TOKEN_EOL, nullptr},
+                                       {TOKEN_IDENT, "y"},
+                                       {TOKEN_EOL, nullptr},
+                                       {TOKEN_EOF, nullptr},
+                                   });
+}
+
+/** Uroven 2 nieje na zasobniku */
+TEST(LexerIndent, InvalidDedent) {
+    ExpectedTokens("x\n    y\n  z",
+                   {
+                       {TOKEN_IDENT, "x"},
+                       {TOKEN_EOL, nullptr},
+                       {TOKEN_INDENT, nullptr},
+                       {TOKEN_IDENT, "y"},
+                       {TOKEN_EOL, nullptr},
+                   },
+                   1);
+}
+
+/** Tabulator v odsadeni */
+TEST(LexerIndent, TabAtStart) { ExpectedTokens("\tx", {}, 1); }
+
+/** Tabulator v odsadeni na druhom riadku */
+TEST(LexerIndent, TabOnSecondLine) {
+    ExpectedTokens("x\n\ty",
+                   {
+                       {TOKEN_IDENT, "x"},
+                       {TOKEN_EOL, nullptr},
+                   },
+                   1);
+}
+
+/** Tabulator za medzerou je stale v odsadeni */
+TEST(LexerIndent, TabAfterSpaces) { ExpectedTokens("  \tx", {}, 1); }
+
+/** Riadok len s tabulatorom je prazdny riadok */
+TEST(LexerIndent, TabOnlyLineIgnored) {
+    ExpectedTokens("x\n\t\ny", {
+                                 {TOKEN_IDENT, "x"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_IDENT, "y"},
+                                 {TOKEN_EOL, nullptr},
+                                 {TOKEN_EOF, nullptr},
+                             });
+}
+
+/** Dva prikazy na jednom riadku */
+TEST(LexerIndent, Semicolon) {
+    ExpectedTokens("x; y", {
+                               {TOKEN_IDENT, "x"},
+                               {TOKEN_SEMICOLON, ";"},
+                               {TOKEN_IDENT, "y"},
+                               {TOKEN_EOL, nullptr},
+                               {TOKEN_EOF, nullptr},
+                           });
+}
+
+/** Novy riadok v zatvorkach nie je EOL ani INDENT */
+TEST(LexerIndent, NewLineInParens) {
+    ExpectedTokens("f(\n  a)\ny", {
+                                      {TOKEN_IDENT, "f"},
+                                      {TOKEN_LPAREN, "("},
+                                      {TOKEN_IDENT, "a"},
+                                      {TOKEN_RPAREN, ")"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_IDENT, "y"},
+                                      {TOKEN_EOL, nullptr},
+                                      {TOKEN_EOF, nullptr},
+                                  });
+}
+
+/** Tabulator za kodom je bezny biely znak */
+TEST(LexerIndent, TabAfterCode) {
+    ExpectedTokens("x = 1 \t", {
+                                   {TOKEN_IDENT, "x"},
+                                   {TOKEN_ASSIGN, "="},
+                                   {TOKEN_INT_LITERAL, "1"},
+                                   {TOKEN_EOL, nullptr},
+                                   {TOKEN_EOF, nullptr},
+                               });
+}
