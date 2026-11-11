@@ -334,11 +334,6 @@ int ReadNumber(Lexer *lexer, Token *token, size_t line, size_t column){
             free(buffer);
             return result;
         }
-
-        if (buffer[0] == '0' && length > 1){
-            free(buffer);
-            return 1;
-        }
     }
 
     character = LexerPreviewCharacter(lexer);
@@ -403,6 +398,10 @@ int ReadNumber(Lexer *lexer, Token *token, size_t line, size_t column){
     if (Double){
         type = TOKEN_DOUBLE_LITERAL;
     } else {
+        if (buffer[0] == '0' && length > 1){
+            free(buffer);
+            return 1;
+        }
         type = TOKEN_INT_LITERAL;
     }
 
@@ -418,7 +417,7 @@ int ReadString(Lexer *lexer, Token *token, size_t line, size_t column){
     if (buffer == NULL){
         return 99;
     }
-
+    buffer[0] = '\0';
     int result = 0;
     int count = 0;
     LexerNextCharacter(lexer);
@@ -492,7 +491,16 @@ int ReadString(Lexer *lexer, Token *token, size_t line, size_t column){
                 LexerNextCharacter(lexer);
                 quotes++;
                 if (quotes == 3){
-                    result = SetToken(token, TOKEN_STRING_LITERAL, buffer, line, column);
+                    while(LexerPreviewCharacter(lexer) == '"'){
+                        result = AddChar(&buffer, &length, &capacity, '"');
+                        if(result != 0){
+                            break;
+                        }
+                        LexerNextCharacter(lexer);
+                    }
+                    if (result == 0){
+                        result = SetToken(token, TOKEN_STRING_LITERAL, buffer, line, column);
+                    }
                     break;
                 }
                 continue;
@@ -574,6 +582,7 @@ int LexerNextToken(Lexer *lexer, Token *token){
             size_t indent = 0;
             int RestartLine = 0;
             int comment = 0;
+            int IndentTab = 0;
             while (1){
                 character = LexerPreviewCharacter(lexer);
                 if (character == ' '){
@@ -584,7 +593,9 @@ int LexerNextToken(Lexer *lexer, Token *token){
                     continue;
                 }
                 if (character == '\t'){
-                    return 1;
+                    LexerNextCharacter(lexer);
+                    IndentTab = 1;
+                    continue;;
                 }
                 if (character == '\n'){
                     LexerNextCharacter(lexer);
@@ -644,6 +655,9 @@ int LexerNextToken(Lexer *lexer, Token *token){
             }
             character = LexerPreviewCharacter(lexer);
             if (character != EOF){
+                if (IndentTab){
+                    return 1;
+                }
                 size_t count0 = lexer->IndentCount;
                 int result = CheckIndent(lexer, indent, token);
                 if (result != 0){
