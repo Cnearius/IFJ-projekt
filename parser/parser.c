@@ -43,6 +43,10 @@ static int DefVar(Parser *parser);
 static int VarRest(Parser *parser);
 static int RetStmt(Parser *parser);
 static int AssignAfter(Parser *parser);
+static int If(Parser *parser);
+static int Loop(Parser *parser);
+static int IfRest(Parser *parser);
+static int ElseRest(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -448,9 +452,133 @@ static int SimpleLineRest(Parser *parser) {
     }
 }
 
+/**
+ * @brief Spracovava blokovy prikaz (if alebo while)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
 static int BlockStmt(Parser *parser) {
-    (void)parser;
-    return 0;
+    if (Check(parser, TOKEN_IF)) {
+        int result = If(parser);
+        if (result != 0)
+            return result;
+        return result;
+    } else {
+        int result = Loop(parser);
+        if (result != 0)
+            return result;
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava podmieneny prikaz (if podmienka then) a blok
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int If(Parser *parser) {
+    int result = Expect(parser, TOKEN_IF);
+    if (result != 0)
+        return result;
+
+    result = Expr(parser);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_THEN);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_EOL);
+    if (result != 0)
+        return result;
+    
+    result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = IfRest(parser);
+    if (result != 0)
+        return result;
+
+    return result;
+}
+
+/**
+ * @brief Spracovava cyklus (while podmienka do) a blok
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int Loop(Parser *parser) {
+    int result = Expect(parser, TOKEN_WHILE);
+    if (result != 0)
+        return result;
+
+    result = Expr(parser);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_DO);
+    if (result != 0)
+        return result;
+    
+    result = Expect(parser, TOKEN_EOL);
+    if (result != 0)
+        return result;
+    
+    result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    return result;
+}
+
+/**
+ * @brief Spracovava volitelnu vetvu else
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int IfRest(Parser *parser) {
+    if (Check(parser, TOKEN_ELSE)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = ElseRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 0;
+    }
+}
+
+/**
+ * @brief Spracovava obycajne else s blokom alebo else if
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int ElseRest(Parser *parser) {
+    if (Check(parser, TOKEN_EOL)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = FunBody(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else if (Check(parser, TOKEN_IF)) {
+        int result = If(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }else{
+        return 2;
+    }
 }
 
 /**
