@@ -1,0 +1,13 @@
+import ifj26.*
+
+@main def main(): Unit =
+  val x = 5
+  var y: Int = x
+  y = 10
+  if x then
+    y = 1
+  else
+    y = 2
+  while y do
+    y = 3
+  return

@@ -1,0 +1,4 @@
+import foo.*
+
+@main def main(): Unit =
+  val x = 5
