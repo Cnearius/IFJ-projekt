@@ -48,3 +48,22 @@ static int Expect(Parser *parser, TokenType type){
     }
     return Advance(parser);
 }
+
+/**
+* @brief Vykonanie syntaktickej analyzy celeho programu
+* @param lexer z ktoreho parser cita tokeny
+* @return 0 - OK, 1 - lexikalna chyba, 2 - syntakticka chyba, 99 - interna chyba
+*/
+int Parse(Lexer *lexer){
+    Parser parser;
+    parser.lexer = lexer;
+    parser.current.value = NULL;
+    int result = Advance(&parser);
+    if(result != 0){
+        FreeToken(&parser.current);
+        return result;
+    }
+    // TODO: Program;
+    FreeToken(&parser.current);
+    return result;
+}
