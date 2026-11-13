@@ -338,27 +338,275 @@ static int FunBody(Parser *parser) {
     return result;
 }
 
-// TODO: docasny stub, nahradit precedencnou analyzou
-static int Expr(Parser *parser) {
-    if (Check(parser, TOKEN_IDENT) || Check(parser, TOKEN_INT_LITERAL) ||
-        Check(parser, TOKEN_DOUBLE_LITERAL) || Check(parser, TOKEN_STRING_LITERAL)) {
-        int result = Advance(parser);
-        if (result != 0)
-            return result;
+enum PrecSymbol {
+    PREC_I,
+    PREC_MUL,
+    PREC_DIV,
+    PREC_PLUS,
+    PREC_MINUS,
+    PREC_LT,
+    PREC_LTE,
+    PREC_GT,
+    PREC_GTE,
+    PREC_EQ,
+    PREC_NEQ,
+    PREC_AND,
+    PREC_OR,
+    PREC_NOT,
+    PREC_LPAREN,
+    PREC_RPAREN,
+    PREC_DOLLAR
+};
 
-        return result;
-    } else if (Check(parser, TOKEN_LPAREN)) {
-        int result = Advance(parser);
-        if (result != 0)
-            return result;
+// Precedencna tabulka od Michala
+static const char PrecTable[17][17] = {
+    {' ', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', ' ', ' ', '>', '>'},
+    {'<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', ' ', ' ', ' ', ' ', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', ' ', ' ', ' ', ' ', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', ' ', ' ', ' ', ' ', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', ' ', ' ', ' ', ' ', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', '<', '<', '<', '<', ' ', ' ', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', '<', '<', '<', '<', ' ', ' ', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '>', '<', '<', '>', '>'},
+    {'<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
+    {'<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '=', ' '},
+    {' ', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', ' ', ' ', '>', '>'},
+    {'<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', ' ', ' '},
+};
 
-        result = Expect(parser, TOKEN_RPAREN);
-        if (result != 0)
-            return result;
+static enum PrecSymbol TokenToPrec(TokenType type) {
+    switch (type) {
+    case TOKEN_IDENT:
+    case TOKEN_INT_LITERAL:
+    case TOKEN_STRING_LITERAL:
+    case TOKEN_DOUBLE_LITERAL:
+    case TOKEN_TRUE_LITERAL:
+    case TOKEN_FALSE_LITERAL:
+        return PREC_I;
 
-        return result;
+    case TOKEN_MUL:
+        return PREC_MUL;
+
+    case TOKEN_DIV:
+        return PREC_DIV;
+
+    case TOKEN_PLUS:
+        return PREC_PLUS;
+
+    case TOKEN_MINUS:
+        return PREC_MINUS;
+
+    case TOKEN_LT:
+        return PREC_LT;
+
+    case TOKEN_LTE:
+        return PREC_LTE;
+
+    case TOKEN_GT:
+        return PREC_GT;
+
+    case TOKEN_GTE:
+        return PREC_GTE;
+
+    case TOKEN_EQ:
+        return PREC_EQ;
+
+    case TOKEN_NEQ:
+        return PREC_NEQ;
+
+    case TOKEN_AND:
+        return PREC_AND;
+
+    case TOKEN_OR:
+        return PREC_OR;
+
+    case TOKEN_NOT:
+        return PREC_NOT;
+
+    case TOKEN_RPAREN:
+        return PREC_RPAREN;
+
+    case TOKEN_LPAREN:
+        return PREC_LPAREN;
+
+    default:
+        return PREC_DOLLAR;
+    }
+}
+
+enum TypeOfItem {
+    ITEM_TERM,
+    ITEM_NONTERM,
+    ITEM_MARK,
+};
+
+typedef struct {
+    enum TypeOfItem type;
+    enum PrecSymbol symbol;
+} StackItem;
+
+typedef struct {
+    StackItem FieldOfItems[256];
+    int top;
+} PrecStack;
+
+static int StackTopTerm(PrecStack *stack) {
+    for (int i = stack->top - 1; i >= 0; i--) {
+        if (stack->FieldOfItems[i].type == ITEM_TERM) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static int StackPush(PrecStack *stack, StackItem item) {
+    if (stack->top == 256) {
+        return 99;
     } else {
+        stack->FieldOfItems[stack->top] = item;
+        stack->top++;
+        return 0;
+    }
+}
+
+static int StackInsertMark(PrecStack *stack, int termIndex) {
+    if (stack->top == 256) {
+        return 99;
+    }
+    for (int i = stack->top - 1; i >= termIndex + 1; i--) {
+        stack->FieldOfItems[i + 1] = stack->FieldOfItems[i];
+    }
+    stack->FieldOfItems[termIndex + 1].type = ITEM_MARK;
+    stack->top++;
+    return 0;
+}
+
+static int StackReduce(PrecStack *stack) {
+    int mark = -1;
+    for (int i = stack->top - 1; i >= 0; i--) {
+        if (stack->FieldOfItems[i].type == ITEM_MARK) {
+            mark = i;
+            break;
+        }
+    }
+    if (mark == -1) {
         return 2;
+    }
+
+    int count = stack->top - mark - 1;
+
+    bool ok = false;
+
+    StackItem *a = &stack->FieldOfItems[mark + 1];
+    StackItem *b = &stack->FieldOfItems[mark + 2];
+    StackItem *c = &stack->FieldOfItems[mark + 3];
+
+    if (count == 1 && a->type == ITEM_TERM && a->symbol == PREC_I) {
+        ok = true;
+    }
+
+    if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_NOT && b->type == ITEM_NONTERM) {
+        ok = true;
+    }
+
+    if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_TERM &&
+        b->symbol == PREC_RPAREN) {
+        ok = true;
+    }
+
+    if (count == 3 && a->type == ITEM_NONTERM && b->type == ITEM_TERM && b->symbol >= PREC_MUL &&
+        b->symbol <= PREC_OR && c->type == ITEM_NONTERM) {
+        ok = true;
+    }
+
+    if (count == 3 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_NONTERM &&
+        c->type == ITEM_TERM && c->symbol == PREC_RPAREN) {
+        ok = true;
+    }
+
+    if (ok != true) {
+        return 2;
+    }
+
+    stack->top = mark;
+
+    StackItem item;
+    item.type = ITEM_NONTERM;
+    item.symbol = PREC_I;
+    return StackPush(stack, item);
+}
+
+static int Expr(Parser *parser) {
+    PrecStack stack;
+    stack.top = 0;
+    StackItem item;
+    item.type = ITEM_TERM;
+    item.symbol = PREC_DOLLAR;
+    int result = StackPush(&stack, item);
+    if (result != 0)
+        return result;
+    int depth = 0;
+    while (true) {
+        enum PrecSymbol a = TokenToPrec(parser->current.type);
+        if (a == PREC_RPAREN && depth == 0) {
+            a = PREC_DOLLAR;
+        }
+
+        int bi = StackTopTerm(&stack);
+        enum PrecSymbol b = stack.FieldOfItems[bi].symbol;
+
+        if (a == PREC_DOLLAR && b == PREC_DOLLAR) {
+            if (stack.top == 2 && stack.FieldOfItems[1].type == ITEM_NONTERM) {
+                return 0;
+            } else {
+                return 2;
+            }
+        }
+
+        switch (PrecTable[b][a]) {
+        case '<':
+            result = StackInsertMark(&stack, bi);
+            if (result != 0)
+                return result;
+            item.type = ITEM_TERM;
+            item.symbol = a;
+            result = StackPush(&stack, item);
+            if (result != 0)
+                return result;
+            if (a == PREC_LPAREN) {
+                depth++;
+            }
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+            break;
+
+        case '=':
+            item.type = ITEM_TERM;
+            item.symbol = a;
+            result = StackPush(&stack, item);
+            if (result != 0)
+                return result;
+            depth--;
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+            break;
+
+        case '>':
+            result = StackReduce(&stack);
+            if (result != 0)
+                return result;
+            break;
+
+        case ' ':
+            return 2;
+        }
     }
 }
 
@@ -492,7 +740,7 @@ static int If(Parser *parser) {
     result = Expect(parser, TOKEN_EOL);
     if (result != 0)
         return result;
-    
+
     result = FunBody(parser);
     if (result != 0)
         return result;
@@ -521,11 +769,11 @@ static int Loop(Parser *parser) {
     result = Expect(parser, TOKEN_DO);
     if (result != 0)
         return result;
-    
+
     result = Expect(parser, TOKEN_EOL);
     if (result != 0)
         return result;
-    
+
     result = FunBody(parser);
     if (result != 0)
         return result;
@@ -576,7 +824,7 @@ static int ElseRest(Parser *parser) {
             return result;
 
         return result;
-    }else{
+    } else {
         return 2;
     }
 }
