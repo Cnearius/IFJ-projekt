@@ -60,9 +60,20 @@ static int Fun(Parser *parser){
     return 0;
 }
 
+/**
+ * @brief Funkcia ktora pokryva oba povolene zapisy main (main na jednom riadku a main s EOL)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return Vysledok zapisu main pre funkciu Fun
+ */
 static int FunMain(Parser *parser){
-    (void)parser;
-    return 0;
+    int result = Expect(parser, TOKEN_MAIN);
+    if (result != 0) return result;
+    if(Check(parser, TOKEN_EOL)){
+        result = Advance(parser);
+        if (result != 0) return result;
+    }
+    result = Fun(parser);
+    return result;
 }
 
 /**
