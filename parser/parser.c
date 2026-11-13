@@ -31,6 +31,9 @@ static int ParamAfterComma(Parser *parser);
 static int DataType(Parser *parser);
 static int FuncTypeParams(Parser *parser);
 static int FuncTypeRest(Parser *parser);
+static int FunBody(Parser *parser);
+static int Expr(Parser *parser);
+static int StmtList(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -271,7 +274,82 @@ static int FuncTypeRest(Parser *parser) {
     }
 }
 
+/**
+ * @brief Spracovava jednoriadkovy vyraz alebo blok na dalsich riadkoch 
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
 static int FunHasBody(Parser *parser) {
+    if (Check(parser, TOKEN_EOL)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = FunBody(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        // TODO A2: blokova lambda nema EOL
+        int result = Expr(parser);
+        if (result != 0)
+            return result;
+
+        result = Expect(parser, TOKEN_EOL);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava odsadeny blok prikazov medzi INDENT a DEDENT
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FunBody(Parser *parser) {
+    int result = Expect(parser, TOKEN_INDENT);
+    if (result != 0)
+        return result;
+
+    result = StmtList(parser);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_DEDENT);
+    if (result != 0)
+        return result;
+
+    return result;
+}
+
+// TODO: docasny stub, nahradit precedencnou analyzou
+static int Expr(Parser *parser) {
+    if (Check(parser, TOKEN_IDENT) || Check(parser, TOKEN_INT_LITERAL) ||
+        Check(parser, TOKEN_DOUBLE_LITERAL) || Check(parser, TOKEN_STRING_LITERAL)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else if (Check(parser, TOKEN_LPAREN)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = Expect(parser, TOKEN_RPAREN);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 2;
+    }
+}
+
+static int StmtList(Parser *parser) {
     (void)parser;
     return 0;
 }
