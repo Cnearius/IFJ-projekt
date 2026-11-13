@@ -39,6 +39,10 @@ static int LineType(Parser *parser);
 static int SimpleLineRest(Parser *parser);
 static int BlockStmt(Parser *parser);
 static int SimpleStmt(Parser *parser);
+static int DefVar(Parser *parser);
+static int VarRest(Parser *parser);
+static int RetStmt(Parser *parser);
+static int AssignAfter(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -449,9 +453,139 @@ static int BlockStmt(Parser *parser) {
     return 0;
 }
 
+/**
+ * @brief Spracovava jednoduchy prikaz (definicia premennej, return, vyraz alebo priradenie)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
 static int SimpleStmt(Parser *parser) {
-    (void)parser;
-    return 0;
+    if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
+        int result = DefVar(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else if (Check(parser, TOKEN_RETURN)) {
+        int result = RetStmt(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        int result = Expr(parser);
+        if (result != 0)
+            return result;
+
+        result = AssignAfter(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava definiciu premennej var/val
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int DefVar(Parser *parser) {
+    if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = Expect(parser, TOKEN_IDENT);
+        if (result != 0)
+            return result;
+
+        result = VarRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 2;
+    }
+}
+
+/**
+ * @brief Volitelny typ a inicializacia premennej
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int VarRest(Parser *parser) {
+    if (Check(parser, TOKEN_COLON)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = DataType(parser);
+        if (result != 0)
+            return result;
+
+        result = Expect(parser, TOKEN_ASSIGN);
+        if (result != 0)
+            return result;
+
+        result = Expr(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        int result = Expect(parser, TOKEN_ASSIGN);
+        if (result != 0)
+            return result;
+
+        result = Expr(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava prikaz "return" s volitelnou hodnotou
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int RetStmt(Parser *parser) {
+    int result = Expect(parser, TOKEN_RETURN);
+    if (result != 0)
+        return result;
+
+    if (Check(parser, TOKEN_EOL) || Check(parser, TOKEN_SEMICOLON)) {
+        return 0;
+    } else {
+        result = Expr(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava volitelne priradenie ("= výraz" za vyrazom)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int AssignAfter(Parser *parser) {
+    if (Check(parser, TOKEN_ASSIGN)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = Expr(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 0;
+    }
 }
 
 /**
