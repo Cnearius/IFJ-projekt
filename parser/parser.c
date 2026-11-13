@@ -21,6 +21,10 @@ static int Program(Parser *parser);
 static int FunList(Parser *parser);
 static int Fun(Parser *parser);
 static int FunMain(Parser *parser);
+static int Params(Parser *parser);
+static int FunOptions(Parser *parser);
+static int FunHasBody(Parser *parser);
+
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -55,9 +59,46 @@ static int Expect(Parser *parser, TokenType type){
     return Advance(parser);
 }
 
-static int Fun(Parser *parser){
+static int Params(Parser *parser){
     (void)parser;
     return 0;
+}
+
+static int FunOptions(Parser *parser){
+    (void)parser;
+    return 0;
+}
+
+static int FunHasBody(Parser *parser){
+    (void)parser;
+    return 0;
+}
+
+/**
+ * @brief Spracuje definiciu dunkcie v tvare : def meno(parametre) [: typ] = telo
+ * @param parser stav parsera s aktualnym tokenom
+ * @return vysledok spracovania pravidla definicie funkcie
+ */
+static int Fun(Parser *parser){
+    int result = Expect(parser, TOKEN_DEF);
+    if (result != 0) return result;
+
+    result = Expect(parser, TOKEN_IDENT);
+    if (result != 0) return result;
+
+    result = Params(parser);
+    if (result != 0) return result;
+
+    result = FunOptions(parser);
+    if (result != 0) return result;
+
+    result = Expect(parser, TOKEN_ASSIGN);
+    if (result != 0) return result;
+
+    result = FunHasBody(parser);
+    if (result != 0) return result;
+
+    return result;
 }
 
 /**
