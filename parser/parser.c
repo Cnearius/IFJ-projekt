@@ -34,6 +34,11 @@ static int FuncTypeRest(Parser *parser);
 static int FunBody(Parser *parser);
 static int Expr(Parser *parser);
 static int StmtList(Parser *parser);
+static int StmtListRest(Parser *parser);
+static int LineType(Parser *parser);
+static int SimpleLineRest(Parser *parser);
+static int BlockStmt(Parser *parser);
+static int SimpleStmt(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -275,7 +280,7 @@ static int FuncTypeRest(Parser *parser) {
 }
 
 /**
- * @brief Spracovava jednoriadkovy vyraz alebo blok na dalsich riadkoch 
+ * @brief Spracovava jednoriadkovy vyraz alebo blok na dalsich riadkoch
  * @param parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
@@ -349,7 +354,102 @@ static int Expr(Parser *parser) {
     }
 }
 
+/**
+ * @brief Spracovava zoznam prikazov v bloku (minimalne jeden)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
 static int StmtList(Parser *parser) {
+    int result = LineType(parser);
+    if (result != 0)
+        return result;
+
+    result = StmtListRest(parser);
+    if (result != 0)
+        return result;
+
+    return result;
+}
+
+/**
+ * @brief Spracovava dalsie prikazy v bloku kym nepride DEDENT
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int StmtListRest(Parser *parser) {
+    if (Check(parser, TOKEN_DEDENT)) {
+        return 0;
+    } else {
+        int result = LineType(parser);
+        if (result != 0)
+            return result;
+
+        result = StmtListRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava blokovy prikaz (if/while) alebo jednoduchy prikaz
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int LineType(Parser *parser) {
+    if (Check(parser, TOKEN_IF) || Check(parser, TOKEN_WHILE)) {
+        int result = BlockStmt(parser);
+        if (result != 0)
+            return result;
+        return result;
+    } else {
+        int result = SimpleStmt(parser);
+        if (result != 0)
+            return result;
+
+        result = SimpleLineRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava dalsie prikazy za ";" na tom istom riadku alebo koniec riadku
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int SimpleLineRest(Parser *parser) {
+    if (Check(parser, TOKEN_SEMICOLON)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = SimpleStmt(parser);
+        if (result != 0)
+            return result;
+
+        result = SimpleLineRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        int result = Expect(parser, TOKEN_EOL);
+        if (result != 0)
+            return result;
+        return result;
+    }
+}
+
+static int BlockStmt(Parser *parser) {
+    (void)parser;
+    return 0;
+}
+
+static int SimpleStmt(Parser *parser) {
     (void)parser;
     return 0;
 }
