@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include <stdbool.h>
+#include <string.h>
 
 /**
  * @brief struktura ktora si pameta aktualny stav parsera takze vsetko co si parser potrebuje pocas prace pametat
@@ -49,6 +50,47 @@ static int Expect(Parser *parser, TokenType type){
     return Advance(parser);
 }
 
+
+static int FunList(Parser *parser){
+    (void)parser;
+    return 0;
+}
+
+/**
+ * @brief Overi pravidlo import ifj26.* a vsetky funkcie za nim az po koniec programu
+ * @param parser stav parsera s aktualnym tokenom
+ * @return vysledok kontroly pravidla
+ */
+static int Program(Parser *parser){
+    int result = Expect(parser, TOKEN_IMPORT);
+    if (result != 0) return result;
+
+    if(!Check(parser, TOKEN_IDENT)){
+        return 2;
+    }else if(strcmp(parser->current.value, "ifj26") != 0){
+        return 2;
+    }
+    result = Advance(parser);
+    if (result != 0) return result;
+
+    result = Expect(parser, TOKEN_DOT);
+    if (result != 0) return result;
+
+    result = Expect(parser, TOKEN_MUL);
+    if (result != 0) return result;
+
+    result = Expect(parser, TOKEN_EOL);
+    if (result != 0) return result;
+
+    result = FunList(parser);
+    if (result != 0) return result;
+
+    result = Expect(parser, TOKEN_EOF);
+    if (result != 0) return result;
+
+    return result;
+}
+
 /**
 * @brief Vykonanie syntaktickej analyzy celeho programu
 * @param lexer z ktoreho parser cita tokeny
@@ -63,7 +105,7 @@ int Parse(Lexer *lexer){
         FreeToken(&parser.current);
         return result;
     }
-    // TODO: Program;
+    result = Program(&parser);
     FreeToken(&parser.current);
     return result;
 }
