@@ -17,6 +17,11 @@ typedef struct{
     Token current; ///< konkretny token ktory parser aktualne kontroluje
 }Parser;
 
+static int Program(Parser *parser);
+static int FunList(Parser *parser);
+static int Fun(Parser *parser);
+static int FunMain(Parser *parser);
+
 /**
  * @brief  Uvolni stary token a posunie novy na current
  * @param  parser stav parsera s aktualnym tokenom
@@ -50,10 +55,35 @@ static int Expect(Parser *parser, TokenType type){
     return Advance(parser);
 }
 
-
-static int FunList(Parser *parser){
+static int Fun(Parser *parser){
     (void)parser;
     return 0;
+}
+
+static int FunMain(Parser *parser){
+    (void)parser;
+    return 0;
+}
+
+/**
+ * @brief Spracuje zoznam funkcii za prologom ifj26.* a podla aktualneho tokenu vyberie pravidlo
+ * @param parser stav parsera s aktualnym tokenom
+ * @return vysledok spracovania funkcii za prologom
+ */
+static int FunList(Parser *parser){
+    if(Check(parser, TOKEN_DEF)){
+        int result = Fun(parser);
+        if (result != 0) return result;
+        result = FunList(parser);
+        return result;
+    }else if(Check(parser, TOKEN_MAIN)){
+        int result = FunMain(parser);
+        if (result != 0) return result;
+        result = FunList(parser);
+        return result;
+    }else{
+        return 0;
+    }
 }
 
 /**
