@@ -29,6 +29,8 @@ static int RestParams(Parser *parser);
 static int MoreParams(Parser *parser);
 static int ParamAfterComma(Parser *parser);
 static int DataType(Parser *parser);
+static int FuncTypeParams(Parser *parser);
+static int FuncTypeRest(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -62,7 +64,8 @@ static int Expect(Parser *parser, TokenType type) {
 }
 
 /**
- * @brief Spracovava pravidlo pre cely zoznam parametrov v zatvorkach (napriklad : (a: Int, b: Double))
+ * @brief Spracovava pravidlo pre cely zoznam parametrov v zatvorkach (napriklad : (a: Int, b:
+ * Double))
  * @param parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
@@ -95,15 +98,15 @@ static int RestParams(Parser *parser) {
         result = Expect(parser, TOKEN_COLON);
         if (result != 0)
             return result;
-        
+
         result = DataType(parser);
         if (result != 0)
             return result;
-        
+
         result = MoreParams(parser);
         if (result != 0)
             return result;
-        
+
         return result;
     }
 }
@@ -121,11 +124,11 @@ static int MoreParams(Parser *parser) {
         int result = Expect(parser, TOKEN_COMMA);
         if (result != 0)
             return result;
-        
+
         result = ParamAfterComma(parser);
         if (result != 0)
             return result;
-        
+
         return result;
     }
 }
@@ -148,27 +151,124 @@ static int ParamAfterComma(Parser *parser) {
         result = Expect(parser, TOKEN_COLON);
         if (result != 0)
             return result;
-        
+
         result = DataType(parser);
         if (result != 0)
             return result;
-        
+
         result = MoreParams(parser);
         if (result != 0)
             return result;
-        
+
         return result;
     }
 }
 
-static int DataType(Parser *parser) {
-    (void)parser;
-    return 0;
+/**
+ * @brief Spracovava volitelny navratovy typ funkcie ": Typ"
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FunOptions(Parser *parser) {
+    if (Check(parser, TOKEN_COLON)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = DataType(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 0;
+    }
 }
 
-static int FunOptions(Parser *parser) {
-    (void)parser;
-    return 0;
+/**
+ * @brief Spracovava samotny jednoduchy datovy typ (Int, Double, ...) alebo funkcny typ ((T1, T2) =>
+ * R)(LAMBDAS)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int DataType(Parser *parser) {
+    if (Check(parser, TOKEN_UNIT) || Check(parser, TOKEN_INT) || Check(parser, TOKEN_DOUBLE) ||
+        Check(parser, TOKEN_STRING) || Check(parser, TOKEN_BOOL)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+        return result;
+    } else if (Check(parser, TOKEN_LPAREN)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = FuncTypeParams(parser);
+        if (result != 0)
+            return result;
+
+        result = Expect(parser, TOKEN_RPAREN);
+        if (result != 0)
+            return result;
+
+        result = Expect(parser, TOKEN_ARROW);
+        if (result != 0)
+            return result;
+
+        result = DataType(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 2;
+    }
+}
+
+/**
+ * @brief Spracovava zoznam typov v zatvorkach funkcneho typu (moze byt aj prazdny)
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FuncTypeParams(Parser *parser) {
+    if (Check(parser, TOKEN_RPAREN)) {
+        return 0;
+    } else {
+        int result = DataType(parser);
+        if (result != 0)
+            return result;
+
+        result = FuncTypeRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    }
+}
+
+/**
+ * @brief Spracovava dalsie typy za ciarkou vo funkcnom type
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FuncTypeRest(Parser *parser) {
+    if (Check(parser, TOKEN_COMMA)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = DataType(parser);
+        if (result != 0)
+            return result;
+
+        result = FuncTypeRest(parser);
+        if (result != 0)
+            return result;
+
+        return result;
+    } else {
+        return 0;
+    }
 }
 
 static int FunHasBody(Parser *parser) {
