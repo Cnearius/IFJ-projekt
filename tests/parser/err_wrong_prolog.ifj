@@ -1,3 +1,7 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "ako overim ze parser odmietne chybne programy"
+// Ocakavany navratovy kod: 2
+
 import foo.*
 
 @main def main(): Unit =
