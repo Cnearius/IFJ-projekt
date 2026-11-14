@@ -356,7 +356,8 @@ enum PrecSymbol {
     PREC_NOT,
     PREC_LPAREN,
     PREC_RPAREN,
-    PREC_DOLLAR
+    PREC_DOLLAR,
+    PREC_UMINUS,
 };
 
 // Precedencna tabulka od Michala
@@ -440,6 +441,14 @@ static enum PrecSymbol TokenToPrec(TokenType type) {
     }
 }
 
+static int PrecIndex(enum PrecSymbol s){
+    if(s == PREC_UMINUS){
+        return PREC_NOT;
+    }else{
+        return s;
+    }
+}
+
 enum TypeOfItem {
     ITEM_TERM,
     ITEM_NONTERM,
@@ -455,6 +464,7 @@ typedef struct {
     StackItem FieldOfItems[256];
     int top;
 } PrecStack;
+
 
 static int StackTopTerm(PrecStack *stack) {
     for (int i = stack->top - 1; i >= 0; i--) {
@@ -511,7 +521,7 @@ static int StackReduce(PrecStack *stack) {
         ok = true;
     }
 
-    if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_NOT && b->type == ITEM_NONTERM) {
+    if (count == 2 && a->type == ITEM_TERM && (a->symbol == PREC_NOT || a->symbol == PREC_UMINUS)  && b->type == ITEM_NONTERM) {
         ok = true;
     }
 
@@ -543,6 +553,7 @@ static int StackReduce(PrecStack *stack) {
 }
 
 static int Expr(Parser *parser) {
+    bool prevOperand = false;
     bool isIdent;
     PrecStack stack;
     stack.top = 0;
@@ -558,6 +569,9 @@ static int Expr(Parser *parser) {
         if (a == PREC_RPAREN && depth == 0) {
             a = PREC_DOLLAR;
         }
+        if(a == PREC_MINUS && !prevOperand){
+            a = PREC_UMINUS;
+        }
 
         int bi = StackTopTerm(&stack);
         enum PrecSymbol b = stack.FieldOfItems[bi].symbol;
@@ -570,7 +584,7 @@ static int Expr(Parser *parser) {
             }
         }
 
-        switch (PrecTable[b][a]) {
+        switch (PrecTable[PrecIndex(b)][PrecIndex(a)]) {
         case '<':
             result = StackInsertMark(&stack, bi);
             if (result != 0)
@@ -580,10 +594,12 @@ static int Expr(Parser *parser) {
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
+            prevOperand = (a == PREC_I || a == PREC_RPAREN);
             if (a == PREC_LPAREN) {
                 depth++;
             }
             isIdent = Check(parser, TOKEN_IDENT);
+
             result = Advance(parser);
             if (result != 0)
                 return result;
@@ -600,6 +616,7 @@ static int Expr(Parser *parser) {
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
+            prevOperand = (a == PREC_I || a == PREC_RPAREN);
             depth--;
             result = Advance(parser);
             if (result != 0)
