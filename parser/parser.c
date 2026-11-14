@@ -47,6 +47,7 @@ static int If(Parser *parser);
 static int Loop(Parser *parser);
 static int IfRest(Parser *parser);
 static int ElseRest(Parser *parser);
+static int CallArgs(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -542,6 +543,7 @@ static int StackReduce(PrecStack *stack) {
 }
 
 static int Expr(Parser *parser) {
+    bool isIdent;
     PrecStack stack;
     stack.top = 0;
     StackItem item;
@@ -581,9 +583,15 @@ static int Expr(Parser *parser) {
             if (a == PREC_LPAREN) {
                 depth++;
             }
+            isIdent = Check(parser, TOKEN_IDENT);
             result = Advance(parser);
             if (result != 0)
                 return result;
+            if (isIdent && Check(parser, TOKEN_LPAREN)) {
+                result = CallArgs(parser);
+                if (result != 0)
+                    return result;
+            }
             break;
 
         case '=':
@@ -606,6 +614,38 @@ static int Expr(Parser *parser) {
 
         case ' ':
             return 2;
+        }
+    }
+}
+
+static int CallArgs(Parser *parser) {
+    int result = Expect(parser, TOKEN_LPAREN);
+    if (result != 0)
+        return result;
+    if(Check(parser, TOKEN_RPAREN)){
+        result = Advance(parser);
+        if (result != 0)
+            return result;
+        return 0;
+    }
+
+    while (true) {
+        result = Expr(parser);
+        if (result != 0)
+            return result;
+        if (Check(parser, TOKEN_COMMA)) {
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+            if (Check(parser, TOKEN_RPAREN)) {
+                // TODO A1
+                result = Advance(parser);
+                if (result != 0)
+                    return result;
+                return 0;     
+            }
+        } else {
+            return Expect(parser, TOKEN_RPAREN);
         }
     }
 }
