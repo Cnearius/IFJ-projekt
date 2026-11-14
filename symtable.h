@@ -1,18 +1,18 @@
 #ifndef SYMTABLE_H
 #define SYMTABLE_H
 /**
-*Projekt: Implementace překladače imperativního jazyka IFJ26
-*@file symtable.h
-*@author Michal Caban (xcabanm00)
-*@brief Definicia struktur pre hashtable, protypy funkcii
-*/
+ *Projekt: Implementace překladače imperativního jazyka IFJ26
+ *@file symtable.h
+ *@author Michal Caban (xcabanm00)
+ *@brief Definicia struktur pre hashtable, protypy funkcii
+ */
+#include "types.h"
 #include <stdbool.h>
 #include <stddef.h>
-#include "types.h"
 
 typedef struct tSymbolData {
     typeId type;
-    bool isFunction; 
+    bool isFunction;
     int paramCount;
     bool isDefined;
     bool isConst;

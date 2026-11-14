@@ -1,11 +1,11 @@
 /**
-* Projekt: Implementace překladače imperativního jazyka IFJ26
-*@file symtable.c
-*@author Michal Caban (xcabanm00)
-*@brief ADT implementacia hashovacej tabulky s implicitnym zretazenim za vyuzitia hashovacieho
-*algoritmu DJB + scope pre hashtable, zasobnik tabuliek kde deklaracia
-*ide do vrchnej tabulky a hladanie ide po parentoch
-*/
+ * Projekt: Implementace překladače imperativního jazyka IFJ26
+ *@file symtable.c
+ *@author Michal Caban (xcabanm00)
+ *@brief ADT implementacia hashovacej tabulky s implicitnym zretazenim za vyuzitia hashovacieho
+ *algoritmu DJB + scope pre hashtable, zasobnik tabuliek kde deklaracia
+ *ide do vrchnej tabulky a hladanie ide po parentoch
+ */
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -79,7 +79,7 @@ static unsigned long DJBHash(const char *key) {
     return hash;
 }
 
-// ked je tabulka uz velmi zaplnena, v tomto pripade > 0.65, je potrebne spravit resize 
+// ked je tabulka uz velmi zaplnena, v tomto pripade > 0.65, je potrebne spravit resize
 // aby sme neprisli o konstantnu casovu zlozitost pri vyhladavani a vkladani
 static bool ResizeTable(symTable *table) {
     size_t oldCapacity = table->capacity;
@@ -127,7 +127,7 @@ static char *CopyKey(const char *key) {
 
 // funkcia pre inicializaciu tabulky, zoberie kapacitu na ktoru ju uzivatel chce nastavit
 // a vypocita z nej najblizsie prvocislo, to je nova kapacita
-//tabulka je sama sebe vrcholom zasobnika
+// tabulka je sama sebe vrcholom zasobnika
 symTable *InitTable(size_t initCapacity) {
     size_t primeCapacity = GetNextPrime(initCapacity);
     symTable *table = malloc(sizeof(symTable));
@@ -151,9 +151,9 @@ symTable *InitTable(size_t initCapacity) {
     return table;
 }
 
-//najde konkretny prvok v tabulke podla kluca
-//musi byt static, lebo vracia ukazatel na prvok tabulky
-//tne musi byt skryty pred uzivatelom
+// najde konkretny prvok v tabulke podla kluca
+// musi byt static, lebo vracia ukazatel na prvok tabulky
+// tne musi byt skryty pred uzivatelom
 static symTableItem *FindSlot(symTable *table, const char *targetKey) {
     unsigned long hashedKey = DJBHash(targetKey);
     size_t index = hashedKey % table->capacity;
@@ -174,8 +174,8 @@ static symTableItem *FindSlot(symTable *table, const char *targetKey) {
     return NULL;
 }
 
-// najde kluc v konkretnej tabulke a vracia true/false 
-//a robi kopiu hodnoty do *out ukazovatela
+// najde kluc v konkretnej tabulke a vracia true/false
+// a robi kopiu hodnoty do *out ukazovatela
 bool SearchItem(symTable *table, const char *key, symbolData *out) {
     symTableItem *slot = FindSlot(table, key);
     if (slot == NULL)
@@ -187,16 +187,16 @@ bool SearchItem(symTable *table, const char *key, symbolData *out) {
 
 // vlozi prvok do konkretnej tabulkym vracia true ak sa operacia podarila, inak false
 bool InsertItem(symTable *table, const char *key, symbolData data) {
-    //ak uz item v tabulke existuje, len prepise jeho hodnotu
+    // ak uz item v tabulke existuje, len prepise jeho hodnotu
     symTableItem *existing = FindSlot(table, key);
     if (existing != NULL) {
         existing->data = data;
         return true;
     }
-    //kontrola zaplnenosti tabulky, 
-    //ak je zaplnena na viac ako 0.65, je potrebny resize
-    //pocitaju sa aj zaslepene indexy, nech sa co najviac udrzi
-    //rychlost vyhladavania
+    // kontrola zaplnenosti tabulky,
+    // ak je zaplnena na viac ako 0.65, je potrebny resize
+    // pocitaju sa aj zaslepene indexy, nech sa co najviac udrzi
+    // rychlost vyhladavania
     bool isFull =
         (((double)table->count + (double)table->tombstoneCount) / ((double)table->capacity - 1) >
          0.65);
@@ -209,7 +209,7 @@ bool InsertItem(symTable *table, const char *key, symbolData data) {
         fprintf(stderr, "Error while resizing table.");
         return false;
     }
-    //vypocita sa index, nesmieme zabudnut na modulo
+    // vypocita sa index, nesmieme zabudnut na modulo
     size_t index = DJBHash(key) % table->capacity;
     size_t targetIndex = table->capacity;
 
@@ -240,8 +240,8 @@ bool InsertItem(symTable *table, const char *key, symbolData data) {
     return true;
 }
 
-//odstranenie prvku z konkretnej tabulky
-//kluc sa uvolni a slot sa nastavi na DELETED
+// odstranenie prvku z konkretnej tabulky
+// kluc sa uvolni a slot sa nastavi na DELETED
 bool DeleteItem(symTable *table, const char *key) {
     symTableItem *item = FindSlot(table, key);
     if (item == NULL) {
@@ -255,14 +255,14 @@ bool DeleteItem(symTable *table, const char *key) {
     return true;
 }
 
-//scope vrstva pre hashtable
-//je to zasobnik tabuliek
-//nova tabulka ide vzdy na vrch zasobnika
-//deklaracia ide vzdy do vrchnej tabulky a hladanie
-//ide aj po vsetkych vrstvach kym nenajde
-//parser vola tieto funkcie
+// scope vrstva pre hashtable
+// je to zasobnik tabuliek
+// nova tabulka ide vzdy na vrch zasobnika
+// deklaracia ide vzdy do vrchnej tabulky a hladanie
+// ide aj po vsetkych vrstvach kym nenajde
+// parser vola tieto funkcie
 
-//uvolni jednu konkretnu tabulku z pamate aj s jej klucmi
+// uvolni jednu konkretnu tabulku z pamate aj s jej klucmi
 static void FreeSingleTable(symTable *table) {
     if (table == NULL)
         return;
@@ -300,8 +300,8 @@ bool PushScope(symTable *table) {
     return true;
 }
 
-//funkcia pre popnutie tabulky z vrcholu zasobnika a uvolni ju
-//korenova tabulka sa neda popnut, aby nezanikol zasobnik
+// funkcia pre popnutie tabulky z vrcholu zasobnika a uvolni ju
+// korenova tabulka sa neda popnut, aby nezanikol zasobnik
 bool PopScope(symTable *table) {
     if (table == NULL)
         return false;
@@ -314,7 +314,7 @@ bool PopScope(symTable *table) {
 }
 
 // vlozi deklaraciu do tabulky na vrchu zasobnika
-//ak sa tam uz nachadza, vrati false
+// ak sa tam uz nachadza, vrati false
 bool InsertLocal(symTable *table, const char *key, symbolData data) {
     if (table == NULL)
         return false;
@@ -327,7 +327,7 @@ bool InsertLocal(symTable *table, const char *key, symbolData data) {
     return InsertItem(stackTop, key, data);
 }
 
-//vyhladava premennu od vrchu sasobnika po parentoch az kym nenajde prvy
+// vyhladava premennu od vrchu sasobnika po parentoch az kym nenajde prvy
 bool LookupVar(symTable *table, const char *key, symbolData *out) {
     if (table == NULL)
         return false;
@@ -341,7 +341,7 @@ bool LookupVar(symTable *table, const char *key, symbolData *out) {
     }
     return false;
 }
-//vlozi funkciu do korenovej tabulky, ak uz funkcia existuje, vrati false
+// vlozi funkciu do korenovej tabulky, ak uz funkcia existuje, vrati false
 bool InsertFunction(symTable *table, const char *key, symbolData data) {
     if (table == NULL)
         return false;
@@ -351,7 +351,7 @@ bool InsertFunction(symTable *table, const char *key, symbolData data) {
         return false;
     return InsertItem(table, key, data);
 }
-//hlada konkretnu funkciu ale iba v korenovej tabulke (inde sa ani nemoze nachadzat)
+// hlada konkretnu funkciu ale iba v korenovej tabulke (inde sa ani nemoze nachadzat)
 bool LookupFunction(symTable *table, const char *key, symbolData *out) {
     if (table == NULL)
         return false;

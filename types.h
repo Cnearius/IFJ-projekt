@@ -2,7 +2,7 @@
  * Projekt: Implementace překladače imperativního jazyka IFJ26
  * @file types.h
  * @author Michal Caban (xcabanm00)
- * @brief deklaracia typov s ktorymi musi pracovat viacero vrstiev 
+ * @brief deklaracia typov s ktorymi musi pracovat viacero vrstiev
  * */
 
 #ifndef TYPES_H
