@@ -1,25 +1,18 @@
 #ifndef SYMTABLE_H
 #define SYMTABLE_H
 /**
-@file symtable.h
-@author Michal Caban (xcabanm00)
-@brief Definicia struktur pre hashtable, protypy funkcii
+*Projekt: Implementace překladače imperativního jazyka IFJ26
+*@file symtable.h
+*@author Michal Caban (xcabanm00)
+*@brief Definicia struktur pre hashtable, protypy funkcii
 */
 #include <stdbool.h>
 #include <stddef.h>
-
-typedef enum {
-    TYPE_UNDEFINED,
-    TYPE_INT,
-    TYPE_DOUBLE,
-    TYPE_STRING,
-    TYPE_BOOLEAN,
-    TYPE_UNIT
-} itemType;
+#include "types.h"
 
 typedef struct tSymbolData {
-    itemType type;
-    bool isFunction; // if false, it is a variable
+    typeId type;
+    bool isFunction; 
     int paramCount;
     bool isDefined;
     bool isConst;

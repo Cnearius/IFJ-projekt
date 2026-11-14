@@ -1,9 +1,10 @@
 /**
-@file symtable.c
-@author Michal Caban (xcabanm00)
-@brief ADT implementacia hashovacej tabulky s implicitnym zretazenim za vyuzitia hashovacieho
-algoritmu DJB + scope pre hashtable, zasobnik tabuliek kde deklaracia
-ide do vrchnej tabulky a hladanie ide po parentoch
+* Projekt: Implementace překladače imperativního jazyka IFJ26
+*@file symtable.c
+*@author Michal Caban (xcabanm00)
+*@brief ADT implementacia hashovacej tabulky s implicitnym zretazenim za vyuzitia hashovacieho
+*algoritmu DJB + scope pre hashtable, zasobnik tabuliek kde deklaracia
+*ide do vrchnej tabulky a hladanie ide po parentoch
 */
 
 #include <stdbool.h>
