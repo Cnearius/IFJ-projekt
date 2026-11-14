@@ -14,9 +14,10 @@
  * prace pametat
  */
 typedef struct {
-    Lexer *lexer;    ///< lexer z ktoreho parser berie tokeny
-    Token current;   ///< konkretny token ktory parser aktualne kontroluje
-    size_t prevLine; ///< riadok predchadzajuceho tokenu
+    Lexer *lexer;      ///< lexer z ktoreho parser berie tokeny
+    Token current;     ///< konkretny token ktory parser aktualne kontroluje
+    size_t prevLine;   ///< riadok predchadzajuceho tokenu
+    size_t tokenCount; ///< pocet zjedenych tokenov
 } Parser;
 
 static int Program(Parser *parser);
@@ -49,6 +50,7 @@ static int Loop(Parser *parser);
 static int IfRest(Parser *parser);
 static int ElseRest(Parser *parser);
 static int CallArgs(Parser *parser);
+static int MemberAccess(Parser *parser);
 
 /**
  * @brief  Uvolni stary token a posunie novy na current
@@ -56,6 +58,7 @@ static int CallArgs(Parser *parser);
  * @return cislo od lexera
  */
 static int Advance(Parser *parser) {
+    parser->tokenCount++;
     parser->prevLine = parser->current.line;
     FreeToken(&parser->current);
     return LexerNextToken(parser->lexer, &parser->current);
@@ -344,6 +347,10 @@ static int FunBody(Parser *parser) {
     return result;
 }
 
+/**
+ * @brief enum pre symboly precedencnej tabulky, poradie podla stlpcov tabulky, PREC_UMINUS je
+ * unarne minus mimo tabulky
+ */
 enum PrecSymbol {
     PREC_I,
     PREC_MUL,
@@ -365,7 +372,9 @@ enum PrecSymbol {
     PREC_UMINUS,
 };
 
-// Precedencna tabulka od Michala
+/**
+ * @brief Precedencna tabulka od Michala, riadok je terminal na zasobniku, stĺpec je vstup
+ */
 static const char PrecTable[17][17] = {
     {' ', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', ' ', ' ', '>', '>'},
     {'<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
@@ -386,6 +395,11 @@ static const char PrecTable[17][17] = {
     {'<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', '<', ' ', ' '},
 };
 
+/**
+ * @brief Prevadza typ tokenu ktory dostane na symbol tabulky, co do vyrazu nepatri je $
+ * @param type konkretny typ tokenu
+ * @return prevedeny symbol tabulky
+ */
 static enum PrecSymbol TokenToPrec(TokenType type) {
     switch (type) {
     case TOKEN_IDENT:
@@ -394,6 +408,7 @@ static enum PrecSymbol TokenToPrec(TokenType type) {
     case TOKEN_DOUBLE_LITERAL:
     case TOKEN_TRUE_LITERAL:
     case TOKEN_FALSE_LITERAL:
+    case TOKEN_INTERPOLATED:
         return PREC_I;
 
     case TOKEN_MUL:
@@ -446,6 +461,11 @@ static enum PrecSymbol TokenToPrec(TokenType type) {
     }
 }
 
+/**
+ * @brief Zisti index symbolu v tabulke, unarne minus pouziva riadok/stlpec !
+ * @param s precedencny symbol
+ * @return index do tabulky
+ */
 static int PrecIndex(enum PrecSymbol s) {
     if (s == PREC_UMINUS) {
         return PREC_NOT;
@@ -454,22 +474,36 @@ static int PrecIndex(enum PrecSymbol s) {
     }
 }
 
+/**
+ * @brief Druh polozky zasobnika -> terminal, E alebo znacka
+ */
 enum TypeOfItem {
     ITEM_TERM,
     ITEM_NONTERM,
     ITEM_MARK,
 };
 
+/**
+ * @brief Jedna polozka zasobnika
+ */
 typedef struct {
     enum TypeOfItem type;
     enum PrecSymbol symbol;
 } StackItem;
 
+/**
+ * @brief Zasobnik precedencnej analyzy
+ */
 typedef struct {
     StackItem FieldOfItems[256];
     int top;
 } PrecStack;
 
+/**
+ * @brief Najde index najvrchnejsieho terminalu
+ * @param stack pointer na zasobnik
+ * @return index alebo -1 ak ziadny nie je
+ */
 static int StackTopTerm(PrecStack *stack) {
     for (int i = stack->top - 1; i >= 0; i--) {
         if (stack->FieldOfItems[i].type == ITEM_TERM) {
@@ -479,6 +513,12 @@ static int StackTopTerm(PrecStack *stack) {
     return -1;
 }
 
+/**
+ * @brief Vlozi polozku na vrch zasobnika
+ * @param stack pointer na zasobnik
+ * @param item  polozka na vlozenie
+ * @return 0 alebo 99
+ */
 static int StackPush(PrecStack *stack, StackItem item) {
     if (stack->top == 256) {
         return 99;
@@ -489,6 +529,12 @@ static int StackPush(PrecStack *stack, StackItem item) {
     }
 }
 
+/**
+ * @brief Vlozi znacku "<" za najvrchnejsi terminal
+ * @param stack pointer na zasobnik
+ * @param termIndex index najvrchnejsieho terminalu.
+ * @return 0 alebo 99
+ */
 static int StackInsertMark(PrecStack *stack, int termIndex) {
     if (stack->top == 256) {
         return 99;
@@ -501,6 +547,11 @@ static int StackInsertMark(PrecStack *stack, int termIndex) {
     return 0;
 }
 
+/**
+ * @brief Nahradi usek od poslednej znacky jednym E podla pravidiel (i, !E, -E, (), E op E, (E))
+ * @param stack pointer na zasobnik
+ * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik
+ */
 static int StackReduce(PrecStack *stack) {
     int mark = -1;
     for (int i = stack->top - 1; i >= 0; i--) {
@@ -557,6 +608,31 @@ static int StackReduce(PrecStack *stack) {
     return StackPush(stack, item);
 }
 
+/**
+ * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazcov (n.floor.toInt) 
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int MemberAccess(Parser *parser) {
+    while (Check(parser, TOKEN_DOT)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+        result = Expect(parser, TOKEN_IDENT);
+        if (result != 0)
+            return result;
+    }
+    return 0;
+}
+
+/**
+ * @brief Precedencna syntakticka analyza vyrazu, skonci na tokene ktory tam nepatri a ten
+ * nezje.Pouziva zasobnik a precedencnu tabulku: pri < vlozi znacku a posunie token, pri > redukuje
+ * podla StackReduce, pri = spoji zatvorky. Volania funkcii riesi cez CallArgs, unarne minus
+ * rozlisuje podla predchadzajuceho tokenu.
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
 static int Expr(Parser *parser) {
     bool prevOperand = false;
     bool isIdent;
@@ -613,6 +689,11 @@ static int Expr(Parser *parser) {
                 if (result != 0)
                     return result;
             }
+            if (a == PREC_I) {
+                result = MemberAccess(parser);
+                if (result != 0)
+                    return result;
+            }
             break;
 
         case '=':
@@ -626,6 +707,10 @@ static int Expr(Parser *parser) {
             result = Advance(parser);
             if (result != 0)
                 return result;
+            result = MemberAccess(parser);
+            if (result != 0)
+                return result;
+
             break;
 
         case '>':
@@ -640,6 +725,11 @@ static int Expr(Parser *parser) {
     }
 }
 
+/**
+ * @brief Argumenty volania funkcie, kazdy cez Expr
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
 static int CallArgs(Parser *parser) {
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
@@ -932,9 +1022,15 @@ static int SimpleStmt(Parser *parser) {
 
         return result;
     } else {
+        bool startsIdent = Check(parser, TOKEN_IDENT);
+        size_t before = parser->tokenCount;
         int result = Expr(parser);
         if (result != 0)
             return result;
+
+        if (Check(parser, TOKEN_ASSIGN) && !(startsIdent && parser->tokenCount - before == 1)) {
+            return 2; // A3
+        }
 
         result = AssignAfter(parser);
         if (result != 0)
@@ -1171,6 +1267,7 @@ static int Program(Parser *parser) {
  */
 int Parse(Lexer *lexer) {
     Parser parser;
+    parser.tokenCount = 0;
     parser.lexer = lexer;
     parser.current.value = NULL;
     parser.prevLine = 0;
