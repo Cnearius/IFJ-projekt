@@ -14,8 +14,9 @@
  * prace pametat
  */
 typedef struct {
-    Lexer *lexer;  ///< lexer z ktoreho parser berie tokeny
-    Token current; ///< konkretny token ktory parser aktualne kontroluje
+    Lexer *lexer;    ///< lexer z ktoreho parser berie tokeny
+    Token current;   ///< konkretny token ktory parser aktualne kontroluje
+    size_t prevLine; ///< riadok predchadzajuceho tokenu
 } Parser;
 
 static int Program(Parser *parser);
@@ -55,6 +56,7 @@ static int CallArgs(Parser *parser);
  * @return cislo od lexera
  */
 static int Advance(Parser *parser) {
+    parser->prevLine = parser->current.line;
     FreeToken(&parser->current);
     return LexerNextToken(parser->lexer, &parser->current);
 }
@@ -157,8 +159,11 @@ static int MoreParams(Parser *parser) {
  */
 static int ParamAfterComma(Parser *parser) {
     if (Check(parser, TOKEN_RPAREN)) {
+        if (parser->current.line ==
+            parser->prevLine) { // A1: koncova ciarka len ak je medzi nou a ")" novy riadok
+            return 2;
+        }
         int result = Advance(parser);
-        // TODO A1: koncova ciarka
         return result;
     } else {
         int result = Expect(parser, TOKEN_IDENT);
@@ -655,7 +660,9 @@ static int CallArgs(Parser *parser) {
             if (result != 0)
                 return result;
             if (Check(parser, TOKEN_RPAREN)) {
-                // TODO A1
+                if (parser->current.line == parser->prevLine) { // A1
+                    return 2;
+                }
                 result = Advance(parser);
                 if (result != 0)
                     return result;
@@ -715,11 +722,11 @@ static bool StartsWithOperator(Parser *parser) {
         Check(parser, TOKEN_DIV) || Check(parser, TOKEN_EQ) || Check(parser, TOKEN_NEQ) ||
         Check(parser, TOKEN_LT) || Check(parser, TOKEN_LTE) || Check(parser, TOKEN_GT) ||
         Check(parser, TOKEN_GTE) || Check(parser, TOKEN_AND) || Check(parser, TOKEN_OR) ||
-        Check(parser, TOKEN_ASSIGN) || Check(parser, TOKEN_ARROW)){
-            return true;
-        }else {
-            return false;
-        }
+        Check(parser, TOKEN_ASSIGN) || Check(parser, TOKEN_ARROW)) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 /**
@@ -728,7 +735,7 @@ static bool StartsWithOperator(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int LineType(Parser *parser) {
-    if(StartsWithOperator(parser)){
+    if (StartsWithOperator(parser)) {
         return 2;
     }
     if (Check(parser, TOKEN_IF) || Check(parser, TOKEN_WHILE)) {
@@ -1166,6 +1173,8 @@ int Parse(Lexer *lexer) {
     Parser parser;
     parser.lexer = lexer;
     parser.current.value = NULL;
+    parser.prevLine = 0;
+    parser.current.line = 0;
     int result = Advance(&parser);
     if (result != 0) {
         FreeToken(&parser.current);
