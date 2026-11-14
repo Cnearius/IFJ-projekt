@@ -373,7 +373,7 @@ enum PrecSymbol {
 };
 
 /**
- * @brief Precedencna tabulka od Michala, riadok je terminal na zasobniku, stĺpec je vstup
+ * @brief Precedencna tabulka od Michala, riadok je terminal na zasobniku, stlpec je vstup
  */
 static const char PrecTable[17][17] = {
     {' ', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', ' ', ' ', '>', '>'},
@@ -409,6 +409,7 @@ static enum PrecSymbol TokenToPrec(TokenType type) {
     case TOKEN_TRUE_LITERAL:
     case TOKEN_FALSE_LITERAL:
     case TOKEN_INTERPOLATED:
+    case TOKEN_UNIT_LITERAL:
         return PREC_I;
 
     case TOKEN_MUL:
@@ -609,7 +610,7 @@ static int StackReduce(PrecStack *stack) {
 }
 
 /**
- * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazcov (n.floor.toInt) 
+ * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia (n.floor.toInt)
  * @param parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
@@ -627,7 +628,7 @@ static int MemberAccess(Parser *parser) {
 
 /**
  * @brief Precedencna syntakticka analyza vyrazu, skonci na tokene ktory tam nepatri a ten
- * nezje.Pouziva zasobnik a precedencnu tabulku: pri < vlozi znacku a posunie token, pri > redukuje
+ * nezje. Pouziva zasobnik a precedencnu tabulku: pri < vlozi znacku a posunie token, pri > redukuje
  * podla StackReduce, pri = spoji zatvorky. Volania funkcii riesi cez CallArgs, unarne minus
  * rozlisuje podla predchadzajuceho tokenu.
  * @param parser stav parsera s aktualnym tokenom
@@ -1124,7 +1125,7 @@ static int RetStmt(Parser *parser) {
 }
 
 /**
- * @brief Spracovava volitelne priradenie ("= výraz" za vyrazom)
+ * @brief Spracovava volitelne priradenie ("= vyraz" za vyrazom)
  * @param parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
