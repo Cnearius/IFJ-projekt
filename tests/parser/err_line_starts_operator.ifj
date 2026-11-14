@@ -1,0 +1,10 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "test pre A5 - riadok nesmie zacinat operatorom"
+// Ocakavany navratovy kod: 2
+// Chyba: riadok zacina operatorom -
+
+import ifj26.*
+
+@main def main(): Unit =
+  val x = 1
+  -x
