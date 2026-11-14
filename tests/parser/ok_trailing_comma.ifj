@@ -1,0 +1,15 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "test pre A1 - povolena koncova ciarka"
+// Ocakavany navratovy kod: 0
+
+import ifj26.*
+
+def add(a: Int,
+        b: Int,
+  ) = a + b
+
+@main def main(): Unit =
+  val x = add(1,
+              2,
+    )
+  print(x)

@@ -1,0 +1,17 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "ako otestujem ze parser funguje na skutocnom programe"
+// Ocakavany navratovy kod: 0
+
+import ifj26.*
+
+@main def main(): Unit =
+  val x = 5
+  var y: Int = x
+  y = 10
+  if x then
+    y = 1
+  else
+    y = 2
+  while y do
+    y = 3
+  return

@@ -1,0 +1,19 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "testy pre vyrazy, volania funkcii a unarne minus"
+// Ocakavany navratovy kod: 0
+
+import ifj26.*
+
+def add(a: Int, b: Int): Int = a + b
+
+@main def main(): Unit =
+  val x = readInt()
+  var y: Int = 2 * -x + add(x, 3) * (x - 1)
+  print(toStr(y))
+  if x < 10 && !(y == 0) then
+    y = -y
+  else
+    print("velke")
+  while y > 0 do
+    y = y - 1
+  print("\n")
