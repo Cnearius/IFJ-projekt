@@ -441,10 +441,10 @@ static enum PrecSymbol TokenToPrec(TokenType type) {
     }
 }
 
-static int PrecIndex(enum PrecSymbol s){
-    if(s == PREC_UMINUS){
+static int PrecIndex(enum PrecSymbol s) {
+    if (s == PREC_UMINUS) {
         return PREC_NOT;
-    }else{
+    } else {
         return s;
     }
 }
@@ -464,7 +464,6 @@ typedef struct {
     StackItem FieldOfItems[256];
     int top;
 } PrecStack;
-
 
 static int StackTopTerm(PrecStack *stack) {
     for (int i = stack->top - 1; i >= 0; i--) {
@@ -521,7 +520,8 @@ static int StackReduce(PrecStack *stack) {
         ok = true;
     }
 
-    if (count == 2 && a->type == ITEM_TERM && (a->symbol == PREC_NOT || a->symbol == PREC_UMINUS)  && b->type == ITEM_NONTERM) {
+    if (count == 2 && a->type == ITEM_TERM && (a->symbol == PREC_NOT || a->symbol == PREC_UMINUS) &&
+        b->type == ITEM_NONTERM) {
         ok = true;
     }
 
@@ -569,7 +569,7 @@ static int Expr(Parser *parser) {
         if (a == PREC_RPAREN && depth == 0) {
             a = PREC_DOLLAR;
         }
-        if(a == PREC_MINUS && !prevOperand){
+        if (a == PREC_MINUS && !prevOperand) {
             a = PREC_UMINUS;
         }
 
@@ -639,7 +639,7 @@ static int CallArgs(Parser *parser) {
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
         return result;
-    if(Check(parser, TOKEN_RPAREN)){
+    if (Check(parser, TOKEN_RPAREN)) {
         result = Advance(parser);
         if (result != 0)
             return result;
@@ -659,7 +659,7 @@ static int CallArgs(Parser *parser) {
                 result = Advance(parser);
                 if (result != 0)
                     return result;
-                return 0;     
+                return 0;
             }
         } else {
             return Expect(parser, TOKEN_RPAREN);
@@ -706,11 +706,31 @@ static int StmtListRest(Parser *parser) {
 }
 
 /**
+ * @brief Overi ci aktualny token operator, ktorym nesmie zacinat logicky riadok
+ * @param parser stav parsera s aktualnym tokenom
+ * @return true alebo false
+ */
+static bool StartsWithOperator(Parser *parser) {
+    if (Check(parser, TOKEN_PLUS) || Check(parser, TOKEN_MINUS) || Check(parser, TOKEN_MUL) ||
+        Check(parser, TOKEN_DIV) || Check(parser, TOKEN_EQ) || Check(parser, TOKEN_NEQ) ||
+        Check(parser, TOKEN_LT) || Check(parser, TOKEN_LTE) || Check(parser, TOKEN_GT) ||
+        Check(parser, TOKEN_GTE) || Check(parser, TOKEN_AND) || Check(parser, TOKEN_OR) ||
+        Check(parser, TOKEN_ASSIGN) || Check(parser, TOKEN_ARROW)){
+            return true;
+        }else {
+            return false;
+        }
+}
+
+/**
  * @brief Spracovava blokovy prikaz (if/while) alebo jednoduchy prikaz
  * @param parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int LineType(Parser *parser) {
+    if(StartsWithOperator(parser)){
+        return 2;
+    }
     if (Check(parser, TOKEN_IF) || Check(parser, TOKEN_WHILE)) {
         int result = BlockStmt(parser);
         if (result != 0)
