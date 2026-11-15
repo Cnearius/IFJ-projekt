@@ -7,8 +7,8 @@
 
 #include "parser.h"
 #include <stdbool.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 /**
  * @brief struktura ktora si pameta aktualny stav parsera takze vsetko co si parser potrebuje pocas
@@ -25,6 +25,9 @@ typedef struct {
     size_t position;      ///< index tokenu ktory je prave v current
 } Parser;
 
+static int Advance(Parser *parser);
+static bool Check(Parser *parser, TokenType type);
+static int Expect(Parser *parser, TokenType type);
 static int Program(Parser *parser);
 static int FunList(Parser *parser);
 static int Fun(Parser *parser);
@@ -57,25 +60,24 @@ static int ElseRest(Parser *parser);
 static int CallArgs(Parser *parser);
 static int MemberAccess(Parser *parser);
 
-
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
  * @param  parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int FillBuffer(Parser *parser){
+static int FillBuffer(Parser *parser) {
     size_t newCapacity = parser->capacity;
-    while(true){
-        if(parser->count == newCapacity){
-            if(newCapacity == 0){
+    while (true) {
+        if (parser->count == newCapacity) {
+            if (newCapacity == 0) {
                 newCapacity = 64;
-            }else{
-                newCapacity = 2*newCapacity;
+            } else {
+                newCapacity = 2 * newCapacity;
             }
             Token *newField = realloc(parser->fieldOfTokens, newCapacity * sizeof(Token));
-            if(newField == NULL){
+            if (newField == NULL) {
                 return 99;
-            }else{
+            } else {
                 parser->fieldOfTokens = newField;
                 parser->capacity = newCapacity;
             }
@@ -83,15 +85,15 @@ static int FillBuffer(Parser *parser){
         Token token;
         token.value = NULL;
         int result = LexerNextToken(parser->lexer, &token);
-        if(result != 0){
+        if (result != 0) {
             FreeToken(&token);
             return result;
         }
         parser->fieldOfTokens[parser->count] = token;
         parser->count++;
-        if(token.type == TOKEN_EOF){
+        if (token.type == TOKEN_EOF) {
             return 0;
-        }  
+        }
     }
 }
 
@@ -99,16 +101,134 @@ static int FillBuffer(Parser *parser){
  * @brief  Uvolni samotne pole a vsetky tokeny v nom
  * @param  parser stav parsera s aktualnym tokenom
  */
-static void FreeBuffer(Parser *parser){
-    for (size_t i = 0; i < parser->count; i++)
-    {
+static void FreeBuffer(Parser *parser) {
+    for (size_t i = 0; i < parser->count; i++) {
         FreeToken(&parser->fieldOfTokens[i]);
     }
     free(parser->fieldOfTokens);
     parser->fieldOfTokens = NULL;
     parser->count = 0;
     parser->capacity = 0;
-    
+}
+
+/**
+ * @brief  Preskoci telo funkcie, bud blok alebo jeden riadok
+ * @param  parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, 2 ak telo neskonci
+ */
+static int SkipBody(Parser *parser) {
+    int depth = 0;
+    if (Check(parser, TOKEN_EOL)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+        result = Expect(parser, TOKEN_INDENT);
+        if (result != 0)
+            return result;
+        depth = 1;
+        while (depth > 0) {
+            if (Check(parser, TOKEN_INDENT)) {
+                depth++;
+            } else if (Check(parser, TOKEN_DEDENT)) {
+                depth--;
+            } else if (Check(parser, TOKEN_EOF)) {
+                return 2;
+            }
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+        }
+
+    } else {
+        while (!Check(parser, TOKEN_EOL)) {
+            if (Check(parser, TOKEN_EOF)) {
+                return 2;
+            } else {
+                int result = Advance(parser);
+                if (result != 0)
+                    return result;
+            }
+        }
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    }
+    return 0;
+}
+
+/**
+ * @brief  Prvy prechod prejde hlavicky vsetkych funkcii a tela preskoci
+ * @param  parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak error kod
+ */
+static int HeaderPass(Parser *parser) {
+    int result = Expect(parser, TOKEN_IMPORT);
+    if (result != 0)
+        return result;
+
+    if (!Check(parser, TOKEN_IDENT)) {
+        return 2;
+    } else if (strcmp(parser->current.value, "ifj26") != 0) {
+        return 2;
+    }
+    result = Advance(parser);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_DOT);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_MUL);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_EOL);
+    if (result != 0)
+        return result;
+
+    while (true) {
+        if (Check(parser, TOKEN_MAIN)) {
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+            if (Check(parser, TOKEN_EOL)) {
+                result = Advance(parser);
+                if (result != 0)
+                    return result;
+            }
+        } else if (Check(parser, TOKEN_DEF)) {
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+
+            result = Expect(parser, TOKEN_IDENT);
+            if (result != 0)
+                return result;
+
+            result = Params(parser);
+            if (result != 0)
+                return result;
+
+            result = FunOptions(parser);
+            if (result != 0)
+                return result;
+
+            // TODO: FunctionHeader (az bude semantic.h)
+
+            result = Expect(parser, TOKEN_ASSIGN);
+            if (result != 0)
+                return result;
+
+            result = SkipBody(parser);
+            if (result != 0)
+                return result;
+        } else if (Check(parser, TOKEN_EOF)) {
+            return 0;
+        } else {
+            return 2;
+        }
+    }
 }
 
 /**
@@ -119,7 +239,7 @@ static void FreeBuffer(Parser *parser){
 static int Advance(Parser *parser) {
     parser->tokenCount++;
     parser->prevLine = parser->current.line;
-    if(parser->position + 1 < parser->count){
+    if (parser->position + 1 < parser->count) {
         parser->position++;
     }
     parser->current = parser->fieldOfTokens[parser->position];
@@ -1343,6 +1463,15 @@ int Parse(Lexer *lexer) {
         return result;
     }
     parser.current = parser.fieldOfTokens[0];
+    result = HeaderPass(&parser);
+    if (result != 0) {
+        FreeBuffer(&parser);
+        return result;
+    }
+    parser.position = 0;
+    parser.current = parser.fieldOfTokens[0];
+    parser.tokenCount = 0;
+    parser.prevLine = 0;
     result = Program(&parser);
     FreeBuffer(&parser);
     return result;
