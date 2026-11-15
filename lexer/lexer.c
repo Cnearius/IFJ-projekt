@@ -19,6 +19,7 @@ struct Lexer {
     size_t IndentCapacity;
     size_t PendingDegents;
     size_t Depth;
+    size_t LogIndent;
     int LineStart;
     int HasCurrentCharacter;
     int HasToken;
@@ -43,6 +44,7 @@ Lexer *LexerCreate(FILE *input) {
     lexer->IndentCapacity = 8;
     lexer->PendingDegents = 0;
     lexer->Depth = 0;
+    lexer->LogIndent = 0;
     lexer->LineStart = 1;
     lexer->HasCurrentCharacter = 0;
     lexer->HasToken = 0;
@@ -410,7 +412,7 @@ int ReadNumber(Lexer *lexer, Token *token, size_t line, size_t column){
     return result;
 }
 
-int ReadString(Lexer *lexer, Token *token, size_t line, size_t column){
+int ReadString(Lexer *lexer, Token *token, TokenType type, size_t line, size_t column){
     size_t capacity = 16;
     size_t length = 0;
     char* buffer = malloc(capacity);
@@ -427,7 +429,7 @@ int ReadString(Lexer *lexer, Token *token, size_t line, size_t column){
             LexerNextCharacter(lexer);
             count = 1;
         } else {
-            result = SetToken(token, TOKEN_STRING_LITERAL, buffer, line, column);
+            result = SetToken(token, type, buffer, line, column);
             free(buffer);
             return result;
         }
@@ -452,7 +454,7 @@ int ReadString(Lexer *lexer, Token *token, size_t line, size_t column){
 
             if (character == '"'){
                 LexerNextCharacter(lexer);
-                result = SetToken(token, TOKEN_STRING_LITERAL, buffer, line, column);
+                result = SetToken(token, type, buffer, line, column);
                 break;
             }
 
@@ -499,7 +501,7 @@ int ReadString(Lexer *lexer, Token *token, size_t line, size_t column){
                         LexerNextCharacter(lexer);
                     }
                     if (result == 0){
-                        result = SetToken(token, TOKEN_STRING_LITERAL, buffer, line, column);
+                        result = SetToken(token, type, buffer, line, column);
                     }
                     break;
                 }
@@ -663,6 +665,7 @@ int LexerNextToken(Lexer *lexer, Token *token){
                 if (result != 0){
                     return result;
                 }
+                lexer->LogIndent = indent;
                 lexer->LineStart = 0;
                 if (lexer->PendingDegents > 0){
                     continue;
@@ -680,6 +683,59 @@ int LexerNextToken(Lexer *lexer, Token *token){
         if (character == '\n'){
             if (lexer->Depth > 0){
                 LexerNextCharacter(lexer);
+                while(1){
+                    size_t indent = 0;
+                    int tab = 0;
+                    while(1){
+                        character = LexerPreviewCharacter(lexer);
+                        if(character == ' '){
+                            LexerNextCharacter(lexer);
+                            indent++;
+                            continue;
+                        }
+                        if (character == '\t'){
+                            LexerNextCharacter(lexer);
+                            tab = 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    character = LexerPreviewCharacter(lexer);
+                    if (character == '\n'){
+                        LexerNextCharacter(lexer);
+                        continue;
+                    }
+                    if (character == EOF){
+                        break;
+                    }
+                    if (character == '/'){
+                        int next = fgetc(lexer->input);
+                        if (next != EOF){
+                            if (ungetc(next, lexer->input) == EOF){
+                                return 99;
+                            }
+                        } else if(ferror(lexer->input)){
+                            return 99;
+                        }
+                        if (next == '/'){
+                            LexerNextCharacter(lexer);
+                            LexerNextCharacter(lexer);
+                            SkipLineComment(lexer);
+                            if (LexerPreviewCharacter(lexer) == '\n'){
+                                LexerNextCharacter(lexer);
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                    if(tab){
+                        return 1;
+                    }
+                    if (character != ')' && indent <= lexer->LogIndent){
+                        return 1;
+                    }
+                    break;
+                }
                 continue;
             }
             if (lexer->HasToken == 0){
@@ -747,7 +803,10 @@ int LexerNextToken(Lexer *lexer, Token *token){
         if (result != 0){
             return result;
         }
-
+        if (strcmp(value, "s") == 0 && LexerPreviewCharacter(lexer) == '"'){
+            free(value);
+            return ReadString(lexer, token, TOKEN_INTERPOLATED, line, column);
+        }
         TokenType type;
         if (strcmp(value, "_") == 0){
             type = TOKEN_WILDCARD;
@@ -865,7 +924,7 @@ int LexerNextToken(Lexer *lexer, Token *token){
             lexer->HasToken = 0;
             return SetToken(token, TOKEN_EOL, "\n", line, column);
         case '"':
-            return ReadString(lexer, token, line, column);
+            return ReadString(lexer, token, TOKEN_STRING_LITERAL, line, column);
         case '@':
             LexerNextCharacter(lexer);
             if (LexerPreviewCharacter(lexer) != 'm'){
