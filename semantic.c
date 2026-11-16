@@ -122,12 +122,13 @@ int FunctionType(const typeId *params, int paramCount, typeId returnType, typeId
 }
 
 int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
-                   const typeId *paramTypes, int paramCount) {
+                   const typeId *paramTypes, int paramCount, bool isMain) {
     (void)name;
     (void)hasReturnType;
     (void)returnType;
     (void)paramTypes;
     (void)paramCount;
+    (void)isMain;
     return 0;
 }
 

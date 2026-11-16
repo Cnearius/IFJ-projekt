@@ -16,7 +16,7 @@ int SemAnalysisInit(void);
 void SemAnalysisFree(void);
 int FunctionType(const typeId *params, int paramCount, typeId returnType, typeId *outId);
 int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
-                   const typeId *paramTypes, int paramCount);
+                   const typeId *paramTypes, int paramCount, bool isMain);
 int PutFuncParamAside(const char *name, typeId type);
 int FuncBodyStart(void); // vytvori novy scope pre funkciu a vlozi donho parametre
 int FuncBodyEnd(void);   // zrusi scope funkcie
