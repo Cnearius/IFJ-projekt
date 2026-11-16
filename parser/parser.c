@@ -6,24 +6,27 @@
  */
 
 #include "parser.h"
+#include "../semantic.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../semantic.h"
 
 /**
  * @brief struktura ktora si pameta aktualny stav parsera takze vsetko co si parser potrebuje pocas
  * prace pametat
  */
 typedef struct {
-    Lexer *lexer;         ///< lexer z ktoreho parser berie tokeny
-    Token current;        ///< konkretny token ktory parser aktualne kontroluje
-    size_t prevLine;      ///< riadok predchadzajuceho tokenu
-    size_t tokenCount;    ///< pocet zjedenych tokenov
-    Token *fieldOfTokens; ///< vsetky tokeny zo vstupu za sebou
-    size_t count;         ///< kolko tokenov v poli naozaj je
-    size_t capacity;      ///< na kolko tokenov je pamet zatial alokovana
-    size_t position;      ///< index tokenu ktory je prave v current
+    Lexer *lexer;               ///< lexer z ktoreho parser berie tokeny
+    Token current;              ///< konkretny token ktory parser aktualne kontroluje
+    size_t prevLine;            ///< riadok predchadzajuceho tokenu
+    size_t tokenCount;          ///< pocet zjedenych tokenov
+    Token *fieldOfTokens;       ///< vsetky tokeny zo vstupu za sebou
+    size_t count;               ///< kolko tokenov v poli naozaj je
+    size_t capacity;            ///< na kolko tokenov je pamet zatial alokovana
+    size_t position;            ///< index tokenu ktory je prave v current
+    typeId paramTypes[64];      ///< pole na typy parametrov aktualnej funkcie
+    const char *paramNames[64]; ///< pole na mena parametrov aktualnej funkcie
+    int paramCount;             ///< pocet parametrov aktualnej funkcie
 } Parser;
 
 static int Advance(Parser *parser);
@@ -34,7 +37,7 @@ static int FunList(Parser *parser);
 static int Fun(Parser *parser);
 static int FunMain(Parser *parser);
 static int Params(Parser *parser);
-static int FunOptions(Parser *parser);
+static int FunOptions(Parser *parser, bool *hasRet, typeId *retType);
 static int FunHasBody(Parser *parser);
 static int RestParams(Parser *parser);
 static int MoreParams(Parser *parser);
@@ -163,6 +166,8 @@ static int SkipBody(Parser *parser) {
  * @return 0 ak OK, inak error kod
  */
 static int HeaderPass(Parser *parser) {
+    bool hasRet;
+    typeId retType;
     int result = Expect(parser, TOKEN_IMPORT);
     if (result != 0)
         return result;
@@ -203,6 +208,8 @@ static int HeaderPass(Parser *parser) {
             if (result != 0)
                 return result;
 
+            const char *name = parser->current.value;
+
             result = Expect(parser, TOKEN_IDENT);
             if (result != 0)
                 return result;
@@ -211,11 +218,13 @@ static int HeaderPass(Parser *parser) {
             if (result != 0)
                 return result;
 
-            result = FunOptions(parser);
+            result = FunOptions(parser, &hasRet, &retType);
             if (result != 0)
                 return result;
 
-            // TODO: FunctionHeader (az bude semantic.h)
+            result = FunctionHeader(name, hasRet, retType, parser->paramTypes, parser->paramCount);
+            if (result != 0)
+                return result;
 
             result = Expect(parser, TOKEN_ASSIGN);
             if (result != 0)
@@ -275,6 +284,7 @@ static int Expect(Parser *parser, TokenType type) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int Params(Parser *parser) {
+    parser->paramCount = 0;
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
         return result;
@@ -292,6 +302,7 @@ static int Params(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int RestParams(Parser *parser) {
+    const char *name = parser->current.value;
     if (Check(parser, TOKEN_RPAREN)) {
         int result = Advance(parser);
         return result;
@@ -307,6 +318,14 @@ static int RestParams(Parser *parser) {
         result = DataType(parser, &type);
         if (result != 0)
             return result;
+
+        if (parser->paramCount == 64) {
+            return 99;
+        } else {
+            parser->paramNames[parser->paramCount] = name;
+            parser->paramTypes[parser->paramCount] = type;
+            parser->paramCount++;
+        }
 
         result = MoreParams(parser);
         if (result != 0)
@@ -344,6 +363,7 @@ static int MoreParams(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int ParamAfterComma(Parser *parser) {
+    const char *name = parser->current.value;
     if (Check(parser, TOKEN_RPAREN)) {
         if (parser->current.line ==
             parser->prevLine) { // A1: koncova ciarka len ak je medzi nou a ")" novy riadok
@@ -365,6 +385,14 @@ static int ParamAfterComma(Parser *parser) {
         if (result != 0)
             return result;
 
+        if (parser->paramCount == 64) {
+            return 99;
+        } else {
+            parser->paramNames[parser->paramCount] = name;
+            parser->paramTypes[parser->paramCount] = type;
+            parser->paramCount++;
+        }
+
         result = MoreParams(parser);
         if (result != 0)
             return result;
@@ -376,21 +404,24 @@ static int ParamAfterComma(Parser *parser) {
 /**
  * @brief Spracovava volitelny navratovy typ funkcie ": Typ"
  * @param parser stav parsera s aktualnym tokenom
+ * @param hasRet ci ma funkcia navratovy typ
+ * @param retType kam sa zapise navratovy typ
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int FunOptions(Parser *parser) {
+static int FunOptions(Parser *parser, bool *hasRet, typeId *retType) {
     if (Check(parser, TOKEN_COLON)) {
+        *hasRet = true;
         int result = Advance(parser);
         if (result != 0)
             return result;
-
-        typeId type;
-        result = DataType(parser, &type);
+        result = DataType(parser, retType);
         if (result != 0)
             return result;
 
         return result;
     } else {
+        *hasRet = false;
+        *retType = TYPE_UNDEFINED;
         return 0;
     }
 }
@@ -403,32 +434,32 @@ static int FunOptions(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int DataType(Parser *parser, typeId *outType) {
-    if (Check(parser, TOKEN_UNIT)){
+    if (Check(parser, TOKEN_UNIT)) {
         *outType = TYPE_UNIT;
         int result = Advance(parser);
         if (result != 0)
             return result;
-    }else if(Check(parser, TOKEN_INT)){
+    } else if (Check(parser, TOKEN_INT)) {
         *outType = TYPE_INT;
         int result = Advance(parser);
         if (result != 0)
             return result;
-    }else if(Check(parser, TOKEN_DOUBLE)){
+    } else if (Check(parser, TOKEN_DOUBLE)) {
         *outType = TYPE_DOUBLE;
         int result = Advance(parser);
         if (result != 0)
             return result;
-    }else if(Check(parser, TOKEN_STRING)){
+    } else if (Check(parser, TOKEN_STRING)) {
         *outType = TYPE_STRING;
         int result = Advance(parser);
         if (result != 0)
             return result;
-    }else if(Check(parser, TOKEN_BOOL)){
+    } else if (Check(parser, TOKEN_BOOL)) {
         *outType = TYPE_BOOLEAN;
         int result = Advance(parser);
         if (result != 0)
             return result;
-    }else if (Check(parser, TOKEN_LPAREN)) {
+    } else if (Check(parser, TOKEN_LPAREN)) {
         typeId retType;
         int result = Advance(parser);
         if (result != 0)
@@ -1362,6 +1393,8 @@ static int AssignAfter(Parser *parser) {
  * @return vysledok spracovania pravidla definicie funkcie
  */
 static int Fun(Parser *parser) {
+    typeId retType;
+    bool hasRet;
     int result = Expect(parser, TOKEN_DEF);
     if (result != 0)
         return result;
@@ -1374,7 +1407,7 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = FunOptions(parser);
+    result = FunOptions(parser, &hasRet, &retType);
     if (result != 0)
         return result;
 
@@ -1487,7 +1520,7 @@ int Parse(Lexer *lexer) {
     parser.position = 0;
     parser.fieldOfTokens = NULL;
     int result = SemAnalysisInit();
-    if(result != 0)
+    if (result != 0)
         return result;
     result = FillBuffer(&parser);
     if (result != 0) {
@@ -1511,4 +1544,3 @@ int Parse(Lexer *lexer) {
     SemAnalysisFree();
     return result;
 }
-
