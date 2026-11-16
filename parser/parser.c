@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../semantic.h"
 
 /**
  * @brief struktura ktora si pameta aktualny stav parsera takze vsetko co si parser potrebuje pocas
@@ -38,7 +39,7 @@ static int FunHasBody(Parser *parser);
 static int RestParams(Parser *parser);
 static int MoreParams(Parser *parser);
 static int ParamAfterComma(Parser *parser);
-static int DataType(Parser *parser);
+static int DataType(Parser *parser, typeId *outType);
 static int FuncTypeParams(Parser *parser);
 static int FuncTypeRest(Parser *parser);
 static int FunBody(Parser *parser);
@@ -302,8 +303,8 @@ static int RestParams(Parser *parser) {
         result = Expect(parser, TOKEN_COLON);
         if (result != 0)
             return result;
-
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -359,7 +360,8 @@ static int ParamAfterComma(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -382,7 +384,8 @@ static int FunOptions(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -396,16 +399,37 @@ static int FunOptions(Parser *parser) {
  * @brief Spracovava samotny jednoduchy datovy typ (Int, Double, ...) alebo funkcny typ ((T1, T2) =>
  * R)(LAMBDAS)
  * @param parser stav parsera s aktualnym tokenom
+ * @param outType kam sa zapise precitany typ
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int DataType(Parser *parser) {
-    if (Check(parser, TOKEN_UNIT) || Check(parser, TOKEN_INT) || Check(parser, TOKEN_DOUBLE) ||
-        Check(parser, TOKEN_STRING) || Check(parser, TOKEN_BOOL)) {
+static int DataType(Parser *parser, typeId *outType) {
+    if (Check(parser, TOKEN_UNIT)){
+        *outType = TYPE_UNIT;
         int result = Advance(parser);
         if (result != 0)
             return result;
-        return result;
-    } else if (Check(parser, TOKEN_LPAREN)) {
+    }else if(Check(parser, TOKEN_INT)){
+        *outType = TYPE_INT;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    }else if(Check(parser, TOKEN_DOUBLE)){
+        *outType = TYPE_DOUBLE;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    }else if(Check(parser, TOKEN_STRING)){
+        *outType = TYPE_STRING;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    }else if(Check(parser, TOKEN_BOOL)){
+        *outType = TYPE_BOOLEAN;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    }else if (Check(parser, TOKEN_LPAREN)) {
+        typeId retType;
         int result = Advance(parser);
         if (result != 0)
             return result;
@@ -422,14 +446,16 @@ static int DataType(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        result = DataType(parser, &retType);
         if (result != 0)
             return result;
 
+        *outType = TYPE_UNDEFINED; // TODO LAMBDAS
         return result;
     } else {
         return 2;
     }
+    return 0;
 }
 
 /**
@@ -441,7 +467,8 @@ static int FuncTypeParams(Parser *parser) {
     if (Check(parser, TOKEN_RPAREN)) {
         return 0;
     } else {
-        int result = DataType(parser);
+        typeId type;
+        int result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -464,7 +491,8 @@ static int FuncTypeRest(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -1259,7 +1287,8 @@ static int VarRest(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -1457,15 +1486,20 @@ int Parse(Lexer *lexer) {
     parser.capacity = 0;
     parser.position = 0;
     parser.fieldOfTokens = NULL;
-    int result = FillBuffer(&parser);
+    int result = SemAnalysisInit();
+    if(result != 0)
+        return result;
+    result = FillBuffer(&parser);
     if (result != 0) {
         FreeBuffer(&parser);
+        SemAnalysisFree();
         return result;
     }
     parser.current = parser.fieldOfTokens[0];
     result = HeaderPass(&parser);
     if (result != 0) {
         FreeBuffer(&parser);
+        SemAnalysisFree();
         return result;
     }
     parser.position = 0;
@@ -1474,5 +1508,7 @@ int Parse(Lexer *lexer) {
     parser.prevLine = 0;
     result = Program(&parser);
     FreeBuffer(&parser);
+    SemAnalysisFree();
     return result;
 }
+
