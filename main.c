@@ -8,9 +8,9 @@
 #include "parser/parser.h"
 #include <stdio.h>
 
-int main(void){
+int main(void) {
     Lexer *lexer = LexerCreate(stdin);
-    if(lexer == NULL){
+    if (lexer == NULL) {
         return 99;
     }
     int result = Parse(lexer);
