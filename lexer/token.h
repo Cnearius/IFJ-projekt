@@ -28,20 +28,20 @@ typedef enum {
     TOKEN_WHILE,  // while
 
     // Klucove slova v rozsireniach
-    TOKEN_BOOL,      // Boolean (BOOLTHEN)
+    TOKEN_BOOL, // Boolean (BOOLTHEN)
 
     // Specialne symboly a identifikatory
     TOKEN_MAIN,  // @main
     TOKEN_IDENT, // [a-zA-Z_][a-zA-Z0-9_]*
 
     // Literaly
-    TOKEN_INT_LITERAL,          // Int
-    TOKEN_DOUBLE_LITERAL,      // Double
-    TOKEN_STRING_LITERAL,       // String
-    TOKEN_INTERPOLATED, // Interpolovaný String s"..."
-    TOKEN_TRUE_LITERAL,         // true
-    TOKEN_FALSE_LITERAL,        // false
-    TOKEN_UNIT_LITERAL,         // ()
+    TOKEN_INT_LITERAL,    // Int
+    TOKEN_DOUBLE_LITERAL, // Double
+    TOKEN_STRING_LITERAL, // String
+    TOKEN_INTERPOLATED,   // Interpolovaný String s"..."
+    TOKEN_TRUE_LITERAL,   // true
+    TOKEN_FALSE_LITERAL,  // false
+    TOKEN_UNIT_LITERAL,   // ()
 
     // Aritmeticke operatory
     TOKEN_PLUS,  // +
@@ -63,7 +63,7 @@ typedef enum {
     TOKEN_OR,  // ||
 
     // Specialne operatory pre rozsirenia
-    TOKEN_ARROW,       // => (LAMBDAS)
+    TOKEN_ARROW, // => (LAMBDAS)
 
     // Separatory a zatvorky
     TOKEN_ASSIGN,    // =
