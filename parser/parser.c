@@ -168,6 +168,7 @@ static int SkipBody(Parser *parser) {
 static int HeaderPass(Parser *parser) {
     bool hasRet;
     typeId retType;
+    bool isMain = false;
     int result = Expect(parser, TOKEN_IMPORT);
     if (result != 0)
         return result;
@@ -195,6 +196,7 @@ static int HeaderPass(Parser *parser) {
 
     while (true) {
         if (Check(parser, TOKEN_MAIN)) {
+            isMain = true;
             result = Advance(parser);
             if (result != 0)
                 return result;
@@ -222,9 +224,12 @@ static int HeaderPass(Parser *parser) {
             if (result != 0)
                 return result;
 
-            result = FunctionHeader(name, hasRet, retType, parser->paramTypes, parser->paramCount);
+            result = FunctionHeader(name, hasRet, retType, parser->paramTypes, parser->paramCount,
+                                    isMain);
             if (result != 0)
                 return result;
+
+            isMain = false;
 
             result = Expect(parser, TOKEN_ASSIGN);
             if (result != 0)
