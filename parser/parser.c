@@ -61,7 +61,7 @@ static int If(Parser *parser);
 static int Loop(Parser *parser);
 static int IfRest(Parser *parser);
 static int ElseRest(Parser *parser);
-static int CallArgs(Parser *parser);
+static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
 static int MemberAccess(Parser *parser);
 
 /**
@@ -885,6 +885,8 @@ static int MemberAccess(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int Expr(Parser *parser, typeId *outType) {
+    typeId argTypes[64];
+    int argCount;
     bool prevOperand = false;
     bool isIdent;
     TokenType tokType;
@@ -945,7 +947,7 @@ static int Expr(Parser *parser, typeId *outType) {
                 return result;
             if (isIdent && Check(parser, TOKEN_LPAREN)) {
                 isCall = true;
-                result = CallArgs(parser);
+                result = CallArgs(parser, argTypes, &argCount);
                 if (result != 0)
                     return result;
             } else {
@@ -968,7 +970,9 @@ static int Expr(Parser *parser, typeId *outType) {
                 if (tokType == TOKEN_IDENT) {
                     if (isCall) {
                         opType = TYPE_UNDEFINED;
-                        // TODO 5b-2: Call
+                        result = Call(tokName, argCount, argTypes, &opType);
+                        if (result != 0)
+                            return result;
                     } else {
                         result = GetVarType(tokName, &opType);
                         if (result != 0)
@@ -1015,9 +1019,12 @@ static int Expr(Parser *parser, typeId *outType) {
 /**
  * @brief Argumenty volania funkcie, kazdy cez Expr
  * @param parser stav parsera s aktualnym tokenom
+ * @param argTypes pole na zapisanie typov argumentov
+ * @param argCount adresa kam sa zapise pocet argumentov
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int CallArgs(Parser *parser) {
+static int CallArgs(Parser *parser, typeId *argTypes, int *argCount) {
+    *argCount = 0;
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
         return result;
@@ -1033,6 +1040,14 @@ static int CallArgs(Parser *parser) {
         result = Expr(parser, &exprType);
         if (result != 0)
             return result;
+
+        if (*argCount == 64) {
+            return 99;
+        } else {
+            argTypes[*argCount] = exprType;
+            (*argCount)++;
+        }
+
         if (Check(parser, TOKEN_COMMA)) {
             result = Advance(parser);
             if (result != 0)
@@ -1409,6 +1424,8 @@ static int DefVar(Parser *parser) {
 /**
  * @brief Volitelny typ a inicializacia premennej
  * @param parser stav parsera s aktualnym tokenom
+ * @param hasType adresa kam sa zapise ci ma premenna uvedeny typ 
+ * @param type adresa kam sa zapise uvedeny typ
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int VarRest(Parser *parser, bool *hasType, typeId *type) {
