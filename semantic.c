@@ -110,7 +110,7 @@ int FunctionType(const typeId *params, int paramCount, typeId returnType, typeId
  * @param params pole parametrov ktore funkcia berie, moze byt aj NULL alebo jeden alebo viacero
  * @param paramCount pocet paremetrov ktore funkcia berie, ak je params NULL paramCount je 0
  * @param returnType navratovy typ built-in funkcie
- * @return Vracia Int, 0 v pripade uspechu, 99 v pripade neuspechu
+ * @return Vracia 0 v pripade uspechu, 99 v pripade neuspechu
  * @brief Helper funkcia pre vkladanie built-in funkcii do root tabulky, tato funkcia sa pouziva iba
  * v SemAnalysisInit, nech SemAnalysisInit nie je priliz dlha
  */
@@ -132,6 +132,19 @@ static int InsertBuiltIn(const char *name, const typeId *params, int paramCount,
     if (!insertSuccess)
         return 99;
     return 0;
+}
+
+/**
+ * @param has parameter ktory mame
+ * @param expected parameter s ktorym porovnavame
+ * @return true ak su typovo kompatibilne
+ * @return false ak su typovo nekompatibilne
+ * @brief Helper funkcia na zistenie kompatibility dvoch typov
+ */
+static bool CheckTypeCompatibility(typeId has, typeId expected) {
+    if ((has != expected) && !(has == TYPE_INT && expected == TYPE_DOUBLE))
+        return false;
+    return true;
 }
 
 /**
@@ -236,6 +249,70 @@ void SemAnalysisFree(void) {
     types.capacity = 0;
 }
 
+/**
+ * @return 0 pri uspechu, 99 pri neuspechu
+ * @brief Vytvori novy scope pre blok
+ */
+int EnterBlock(void) {
+    bool success;
+    success = PushScope(rootTable);
+    if (!success)
+        return 99;
+    return 0;
+}
+
+/**
+ * @return 0 pri uspechu 99 pri neuspechu
+ * @brief Zrusi vrchny scope na konci bloku
+ */
+int LeaveBlock(void) {
+    bool success;
+    success = PopScope(rootTable);
+    if (!success)
+        return 99;
+    return 0;
+}
+
+/**
+ * @param name nazov premennej
+ * @param hasType ci uzivatel zadal typ alebo nie
+ * @param type typ ktory zadefinoval uzivatel pre premennu
+ * @param isConst ci je premenna zadefinovana ako konstanta alebo nie
+ * @param initType typ, ktory ma hodnota na pravej strane vyrazu
+ * @return 99 v pripade neklasifikovanej internej chyby, v tomto pripade ak uzivatel nezada meno premennej
+ * alebo sa premenna pushuje to root tabulky, do ktorej patria iba funkcie
+ * @return 6 ak su type a initType nekompatibilne alebo ked initType sa neda zistit
+ * @return 4 v pripade ze bola premenna zadefinovana viackrat v tom istom bloku
+ * @return 0 v pripade uspechu
+ * @brief Funkcia pre deklaraciu premennej, urobi overenia ci bolo zadane meno a nepokusame 
+ * pushnut do root tabulky, ci su kompatibilne datove typy, ak je vsetko v poriadku, zapise ju do scope tabulky.
+ */
+int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId initType) {
+    if (name == NULL)
+        return 99;
+    if (IsRootScope(rootTable))
+        return 99;
+    if (hasType) {
+        if(!CheckTypeCompatibility(initType, type)) return 6;
+    } else {
+        if (initType == TYPE_UNDEFINED)
+            return 6;
+        type = initType;
+    }
+    symbolData data;
+    data.isConst = isConst;
+    data.isDefined = true;
+    data.isFunction = false;
+    data.paramCount = 0;
+    data.type = type;
+    bool insertSuccess;
+    insertSuccess = InsertLocal(rootTable, name, data);
+    if (!insertSuccess)
+        return 4;
+
+    return 0;
+}
+
 int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
                    const typeId *paramTypes, int paramCount, bool isMain) {
     (void)name;
@@ -247,7 +324,6 @@ int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
     return 0;
 }
 
-// zatial len stub funkcie, nech sa prelozi program a nech sa mozu vyuzivat v syntaktickej analyze
 int PutFuncParamAside(const char *name, typeId type) {
     (void)name;
     (void)type;
@@ -257,19 +333,6 @@ int PutFuncParamAside(const char *name, typeId type) {
 int FuncBodyStart(void) { return 0; }
 
 int FuncBodyEnd(void) { return 0; }
-
-int EnterBlock(void) { return 0; }
-
-int LeaveBlock(void) { return 0; }
-
-int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId initType) {
-    (void)name;
-    (void)hasType;
-    (void)type;
-    (void)isConst;
-    (void)initType;
-    return 0;
-}
 
 int GetVarType(const char *name, typeId *outType) {
     (void)name;
