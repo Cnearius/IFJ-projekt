@@ -401,6 +401,38 @@ int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
     return 0;
 }
 
+/**
+ * @param name Nazov premennej
+ * @param valueType datovy typ hodnoty ktoru chceme priradit premennej
+ * @return 99 v pripade internej chyby
+ * @return 6 v pripade nekompatibility typov alebo ked je UNDEFINED typ
+ * @return 7 ak sa snazime priradit hodnotu funkcii alebo ked sa snazime zmenit hodnotu konstantnej premennej
+ * @return 3 ak ani ani premenna ani funkcia s tymto menom neexistuje
+ * @return 0 v pripade uspechu
+ * @brief Funkcia ktora kontroluje podmienky pre priradovanie hodnoty ku premennej.
+ */
+int AssignValueToVar(const char *name, typeId valueType) {
+    if (name == NULL)
+        return 99;
+    if (valueType == TYPE_UNDEFINED)
+        return 6;
+    bool found;
+    symbolData data;
+    found = LookupVar(rootTable, name, &data);
+    if (!found) {
+        found = LookupFunction(rootTable, name, &data);
+        if (found)
+            return 7;
+    }
+    if (!found)
+        return 3;
+    if (data.isConst)
+        return 7;
+    if (!CheckTypeCompatibility(valueType, data.type))
+        return 6;
+    return 0;
+}
+
 int PutFuncParamAside(const char *name, typeId type) {
     (void)name;
     (void)type;
@@ -416,12 +448,6 @@ int Call(const char *name, int argCount, const typeId *argTypes, typeId *outType
     (void)argCount;
     (void)argTypes;
     *outType = TYPE_UNDEFINED;
-    return 0;
-}
-
-int AssignValueToVar(const char *name, typeId valueType) {
-    (void)name;
-    (void)valueType;
     return 0;
 }
 
