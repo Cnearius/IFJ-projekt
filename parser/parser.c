@@ -62,7 +62,7 @@ static int Loop(Parser *parser);
 static int IfRest(Parser *parser);
 static int ElseRest(Parser *parser);
 static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
-static int MemberAccess(Parser *parser);
+static int MemberAccess(Parser *parser, typeId *type);
 
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
@@ -861,14 +861,22 @@ static int StackReduce(PrecStack *stack) {
 /**
  * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia (n.floor.toInt)
  * @param parser stav parsera s aktualnym tokenom
+ * @param type typ toho co je pred bodkou na vstupe a na vystupe typ po pristupe k clenom (VALMEM)
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int MemberAccess(Parser *parser) {
+static int MemberAccess(Parser *parser, typeId *type) {
     while (Check(parser, TOKEN_DOT)) {
         int result = Advance(parser);
         if (result != 0)
             return result;
+
+        const char *member = parser->current.value;
+
         result = Expect(parser, TOKEN_IDENT);
+        if (result != 0)
+            return result;
+
+        result = ValmemMember(*type, member, type);
         if (result != 0)
             return result;
     }
@@ -979,10 +987,11 @@ static int Expr(Parser *parser, typeId *outType) {
                             return result;
                     }
                 }
-                stack.FieldOfItems[stack.top - 1].valType = opType;
-                result = MemberAccess(parser);
+                result = MemberAccess(parser, &opType);
                 if (result != 0)
                     return result;
+
+                stack.FieldOfItems[stack.top - 1].valType = opType;
             }
             break;
 
@@ -998,9 +1007,19 @@ static int Expr(Parser *parser, typeId *outType) {
             result = Advance(parser);
             if (result != 0)
                 return result;
-            result = MemberAccess(parser);
-            if (result != 0)
-                return result;
+
+            if (stack.FieldOfItems[stack.top - 2].type == ITEM_NONTERM) {
+                typeId parenType = stack.FieldOfItems[stack.top - 2].valType;
+                result = MemberAccess(parser, &parenType);
+                if (result != 0)
+                    return result;
+                stack.FieldOfItems[stack.top - 2].valType = parenType;
+            } else {
+                typeId parenType = TYPE_UNIT;
+                result = MemberAccess(parser, &parenType);
+                if (result != 0)
+                    return result;
+            }
 
             break;
 
@@ -1424,7 +1443,7 @@ static int DefVar(Parser *parser) {
 /**
  * @brief Volitelny typ a inicializacia premennej
  * @param parser stav parsera s aktualnym tokenom
- * @param hasType adresa kam sa zapise ci ma premenna uvedeny typ 
+ * @param hasType adresa kam sa zapise ci ma premenna uvedeny typ
  * @param type adresa kam sa zapise uvedeny typ
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
