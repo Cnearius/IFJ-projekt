@@ -46,7 +46,7 @@ static int DataType(Parser *parser, typeId *outType);
 static int FuncTypeParams(Parser *parser);
 static int FuncTypeRest(Parser *parser);
 static int FunBody(Parser *parser);
-static int Expr(Parser *parser);
+static int Expr(Parser *parser, typeId *outType);
 static int StmtList(Parser *parser);
 static int StmtListRest(Parser *parser);
 static int LineType(Parser *parser);
@@ -560,7 +560,8 @@ static int FunHasBody(Parser *parser) {
         return result;
     } else {
         // TODO A2: blokova lambda nema EOL
-        int result = Expr(parser);
+        typeId exprType;
+        int result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
@@ -878,9 +879,10 @@ static int MemberAccess(Parser *parser) {
  * podla StackReduce, pri = spoji zatvorky. Volania funkcii riesi cez CallArgs, unarne minus
  * rozlisuje podla predchadzajuceho tokenu.
  * @param parser stav parsera s aktualnym tokenom
+ * @param outType adresa kam sa zapise typ vyrazu
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int Expr(Parser *parser) {
+static int Expr(Parser *parser, typeId *outType) {
     bool prevOperand = false;
     bool isIdent;
     PrecStack stack;
@@ -906,6 +908,7 @@ static int Expr(Parser *parser) {
 
         if (a == PREC_DOLLAR && b == PREC_DOLLAR) {
             if (stack.top == 2 && stack.FieldOfItems[1].type == ITEM_NONTERM) {
+                *outType = TYPE_UNDEFINED;
                 return 0;
             } else {
                 return 2;
@@ -989,7 +992,8 @@ static int CallArgs(Parser *parser) {
     }
 
     while (true) {
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
         if (result != 0)
             return result;
         if (Check(parser, TOKEN_COMMA)) {
@@ -1150,7 +1154,8 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = Expr(parser);
+    typeId exprType;
+    result = Expr(parser, &exprType);
     if (result != 0)
         return result;
 
@@ -1191,7 +1196,8 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = Expr(parser);
+    typeId exprType;
+    result = Expr(parser, &exprType);
     if (result != 0)
         return result;
 
@@ -1297,7 +1303,8 @@ static int SimpleStmt(Parser *parser) {
         const char *name = parser->current.value;
         bool startsIdent = Check(parser, TOKEN_IDENT);
         size_t before = parser->tokenCount;
-        int result = Expr(parser);
+        typeId exprType;
+        int result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
@@ -1384,7 +1391,8 @@ static int VarRest(Parser *parser, bool *hasType, typeId *type) {
         if (result != 0)
             return result;
 
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
@@ -1397,7 +1405,8 @@ static int VarRest(Parser *parser, bool *hasType, typeId *type) {
         if (result != 0)
             return result;
 
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
@@ -1418,7 +1427,8 @@ static int RetStmt(Parser *parser) {
     if (Check(parser, TOKEN_EOL) || Check(parser, TOKEN_SEMICOLON)) {
         return 0;
     } else {
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
@@ -1437,7 +1447,8 @@ static int AssignAfter(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
