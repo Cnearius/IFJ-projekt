@@ -1162,7 +1162,15 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
+    result = EnterBlock();
+    if (result != 0)
+        return result;
+
     result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = LeaveBlock();
     if (result != 0)
         return result;
 
@@ -1195,7 +1203,15 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
+    result = EnterBlock();
+    if (result != 0)
+        return result;
+
     result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = LeaveBlock();
     if (result != 0)
         return result;
 
@@ -1234,7 +1250,15 @@ static int ElseRest(Parser *parser) {
         if (result != 0)
             return result;
 
+        result = EnterBlock();
+        if (result != 0)
+            return result;
+
         result = FunBody(parser);
+        if (result != 0)
+            return result;
+
+        result = LeaveBlock();
         if (result != 0)
             return result;
 
