@@ -143,9 +143,15 @@ static int InsertBuiltIn(const char *name, const typeId *params, int paramCount,
  * @brief Helper funkcia na zistenie kompatibility dvoch typov
  */
 static bool CheckTypeCompatibility(typeId has, typeId expected) {
-    if ((has != expected) && !(has == TYPE_INT && expected == TYPE_DOUBLE))
+    if (has == TYPE_UNDEFINED || expected == TYPE_UNDEFINED)
         return false;
-    return true;
+    if (has == expected)
+        return true;
+    if (expected == TYPE_ANY)
+        return true;
+    if (has == TYPE_INT && expected == TYPE_DOUBLE)
+        return true;
+    return false;
 }
 
 /**
@@ -406,7 +412,8 @@ int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
  * @param valueType datovy typ hodnoty ktoru chceme priradit premennej
  * @return 99 v pripade internej chyby
  * @return 6 v pripade nekompatibility typov alebo ked je UNDEFINED typ
- * @return 7 ak sa snazime priradit hodnotu funkcii alebo ked sa snazime zmenit hodnotu konstantnej premennej
+ * @return 7 ak sa snazime priradit hodnotu funkcii alebo ked sa snazime zmenit hodnotu konstantnej
+ * premennej
  * @return 3 ak ani ani premenna ani funkcia s tymto menom neexistuje
  * @return 0 v pripade uspechu
  * @brief Funkcia ktora kontroluje podmienky pre priradovanie hodnoty ku premennej.
@@ -433,6 +440,79 @@ int AssignValueToVar(const char *name, typeId valueType) {
     return 0;
 }
 
+/**
+ * @param funType id funkcneho typu v zozname types
+ * @param argCount pocet argumentov volania
+ * @param argTypes pole typov argumentov volania
+ * @param outReturnType sem sa zapise navratovy typ signatury
+ * @return 99 pri NULL outReturnType alebo ked id signatury neukazuje do zoznamu types
+ * @return 5 ked pocet alebo typ argumentov nesedi so signaturou
+ * @return 6 ked ma niektory argument typ TYPE_UNDEFINED alebo ked je returnId signatury TYPE_UNDEFINED
+ * @return 0 pri uspechu
+ * @brief overi argumenty volania voci signature a vrati jej navratovy typ
+ */
+static int GetReturnType(const typeId funType, int argCount, const typeId *argTypes,
+                         typeId *outReturnType) {
+    if (outReturnType == NULL)
+        return 99;
+    int index = funType - TYPE_ID_BASE;
+    if (index < 0 || index >= types.filledCount)
+        return 99;
+    funcType *signature = &types.functionTypes[index];
+    if (argCount != signature->paramCount)
+        return 5;
+    for (int i = 0; i < argCount; i++) {
+        if (argTypes[i] == TYPE_UNDEFINED)
+            return 6;
+        if (!CheckTypeCompatibility(argTypes[i], signature->idParams[i]))
+            return 5;
+    }
+    if (signature->returnId == TYPE_UNDEFINED)
+        return 6;
+    *outReturnType = signature->returnId;
+    return 0;
+}
+
+/**
+ * @param name meno funkcie alebo premennej s funkcnym typom
+ * @param argCount pocet argumentov volania
+ * @param argTypes pole typov argumentov volania
+ * @param outType sem sa zapise navratovy typ volania
+ * @return 99 pri NULL name alebo outType, zapornom argCount, NULL argTypes pri nenulovom pocte alebo neplatnom id signatury
+ * @return 3 ked meno neexistuje ani ako premenna ani ako funkcia
+ * @return 5 ked pocet alebo typ argumentov nesedi so signaturou
+ * @return 6 ked najdena premenna nie je funkcia, ked ma argument typ TYPE_UNDEFINED alebo ked sa neda odvodit navratovy typ
+ * @return 0 pri uspechu
+ * @brief overi volanie funkcie alebo funkcie ulozenej v premennej a vrati jeho navratovy typ
+ */
+int Call(const char *name, int argCount, const typeId *argTypes, typeId *outType) {
+    if (name == NULL)
+        return 99;
+    if (argCount > 0 && argTypes == NULL)
+        return 99;
+    if (argCount < 0)
+        return 99;
+    if (outType == NULL)
+        return 99;
+    symbolData data;
+    bool success;
+    success = LookupVar(rootTable, name, &data);
+    if (!success) {
+        success = LookupFunction(rootTable, name, &data);
+        if (!success)
+            return 3;
+    }
+    if (data.type < TYPE_ID_BASE)
+        return 6;
+    typeId returnType;
+    int result = GetReturnType(data.type, argCount, argTypes, &returnType);
+    if (result != 0)
+        return result;
+    *outType = returnType;
+
+    return 0;
+}
+
 int PutFuncParamAside(const char *name, typeId type) {
     (void)name;
     (void)type;
@@ -442,14 +522,6 @@ int PutFuncParamAside(const char *name, typeId type) {
 int FuncBodyStart(void) { return 0; }
 
 int FuncBodyEnd(void) { return 0; }
-
-int Call(const char *name, int argCount, const typeId *argTypes, typeId *outType) {
-    (void)name;
-    (void)argCount;
-    (void)argTypes;
-    *outType = TYPE_UNDEFINED;
-    return 0;
-}
 
 int Operator(typeId left, typeId right, int op, typeId *outType) {
     (void)left;
