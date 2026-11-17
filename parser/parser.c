@@ -54,7 +54,7 @@ static int SimpleLineRest(Parser *parser);
 static int BlockStmt(Parser *parser);
 static int SimpleStmt(Parser *parser);
 static int DefVar(Parser *parser);
-static int VarRest(Parser *parser);
+static int VarRest(Parser *parser, bool *hasType, typeId *type);
 static int RetStmt(Parser *parser);
 static int AssignAfter(Parser *parser);
 static int If(Parser *parser);
@@ -1280,6 +1280,7 @@ static int ElseRest(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int SimpleStmt(Parser *parser) {
+
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
         int result = DefVar(parser);
         if (result != 0)
@@ -1293,6 +1294,7 @@ static int SimpleStmt(Parser *parser) {
 
         return result;
     } else {
+        const char *name = parser->current.value;
         bool startsIdent = Check(parser, TOKEN_IDENT);
         size_t before = parser->tokenCount;
         int result = Expr(parser);
@@ -1303,9 +1305,17 @@ static int SimpleStmt(Parser *parser) {
             return 2; // A3
         }
 
+        bool isAssign = Check(parser, TOKEN_ASSIGN);
+
         result = AssignAfter(parser);
         if (result != 0)
             return result;
+
+        if (isAssign) {
+            result = AssignValueToVar(name, TYPE_UNDEFINED);
+            if (result != 0)
+                return result;
+        }
 
         return result;
     }
@@ -1318,15 +1328,31 @@ static int SimpleStmt(Parser *parser) {
  */
 static int DefVar(Parser *parser) {
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
+
+        bool isConst;
+        if (Check(parser, TOKEN_VAL)) {
+            isConst = true;
+        } else {
+            isConst = false;
+        }
+
         int result = Advance(parser);
         if (result != 0)
             return result;
+
+        const char *name = parser->current.value;
+        bool hasType;
+        typeId type;
 
         result = Expect(parser, TOKEN_IDENT);
         if (result != 0)
             return result;
 
-        result = VarRest(parser);
+        result = VarRest(parser, &hasType, &type);
+        if (result != 0)
+            return result;
+
+        result = DeclareVar(name, hasType, type, isConst, TYPE_UNDEFINED);
         if (result != 0)
             return result;
 
@@ -1341,14 +1367,16 @@ static int DefVar(Parser *parser) {
  * @param parser stav parsera s aktualnym tokenom
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int VarRest(Parser *parser) {
+static int VarRest(Parser *parser, bool *hasType, typeId *type) {
     if (Check(parser, TOKEN_COLON)) {
+
+        *hasType = true;
+
         int result = Advance(parser);
         if (result != 0)
             return result;
 
-        typeId type;
-        result = DataType(parser, &type);
+        result = DataType(parser, type);
         if (result != 0)
             return result;
 
@@ -1362,6 +1390,9 @@ static int VarRest(Parser *parser) {
 
         return result;
     } else {
+        *hasType = false;
+        *type = TYPE_UNDEFINED;
+
         int result = Expect(parser, TOKEN_ASSIGN);
         if (result != 0)
             return result;
