@@ -313,6 +313,32 @@ int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId
     return 0;
 }
 
+/**
+ * @param name meno premennej/funkcie ktoru hladame
+ * @param outType tu sa zapise typ hladanej premennej / funkcie
+ * @return 99 v pripade internej chyby
+ * @return 3 v pripade ze sa nenasla ani funkcia ani premenna s tymto menom
+ * @return 0 v pripade uspechu
+ * @brief Funkcia ktora ziska typ premennej alebo funkcie, pokial existuje
+ */
+int GetVarType(const char *name, typeId *outType) {
+    if(name == NULL) return 99;
+    if(outType == NULL) return 99;
+    symbolData data;
+    bool found;
+    found = LookupVar(rootTable, name, &data);
+    if(!found) {
+        found = LookupFunction(rootTable, name, &data);
+    }
+    if(!found) {
+        return 3;
+    }
+    if(data.type == TYPE_UNDEFINED) return 99;
+    *outType = data.type;
+
+    return 0;
+}
+
 int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
                    const typeId *paramTypes, int paramCount, bool isMain) {
     (void)name;
@@ -333,12 +359,6 @@ int PutFuncParamAside(const char *name, typeId type) {
 int FuncBodyStart(void) { return 0; }
 
 int FuncBodyEnd(void) { return 0; }
-
-int GetVarType(const char *name, typeId *outType) {
-    (void)name;
-    *outType = TYPE_UNDEFINED;
-    return 0;
-}
 
 int Call(const char *name, int argCount, const typeId *argTypes, typeId *outType) {
     (void)name;
