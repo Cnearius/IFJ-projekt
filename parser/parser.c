@@ -797,9 +797,64 @@ static int StackInsertMark(PrecStack *stack, int termIndex) {
 }
 
 /**
+ * @brief Prevod symbolu operatora z tabulky na typ tokenu (unarne minus je TOKEN_MINUS)
+ * @param s precedencny symbol operatora
+ * @return typ tokenu, EOF ak symbol nie je operator 
+ */
+static TokenType PrecToToken(enum PrecSymbol s) {
+    switch (s) {
+    case PREC_MUL:
+        return TOKEN_MUL;
+
+    case PREC_DIV:
+        return TOKEN_DIV;
+
+    case PREC_PLUS:
+        return TOKEN_PLUS;
+
+    case PREC_MINUS:
+        return TOKEN_MINUS;
+
+    case PREC_LT:
+        return TOKEN_LT;
+
+    case PREC_LTE:
+        return TOKEN_LTE;
+
+    case PREC_GT:
+        return TOKEN_GT;
+
+    case PREC_GTE:
+        return TOKEN_GTE;
+
+    case PREC_EQ:
+        return TOKEN_EQ;
+
+    case PREC_NEQ:
+        return TOKEN_NEQ;
+
+    case PREC_AND:
+        return TOKEN_AND;
+
+    case PREC_OR:
+        return TOKEN_OR;
+
+    case PREC_NOT:
+        return TOKEN_NOT;
+
+    case PREC_UMINUS:
+        return TOKEN_MINUS;
+
+    default:
+        return TOKEN_EOF;
+    }
+}
+
+/**
  * @brief Nahradi usek od poslednej znacky jednym E podla pravidiel (i, !E, -E, (), E op E, (E))
  * @param stack pointer na zasobnik
- * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik
+ * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik,
+ * inak kod semantickej chyby
  */
 static int StackReduce(PrecStack *stack) {
     int mark = -1;
@@ -817,32 +872,44 @@ static int StackReduce(PrecStack *stack) {
 
     bool ok = false;
 
+    typeId newType = TYPE_UNDEFINED;
+    int result;
+
     StackItem *a = &stack->FieldOfItems[mark + 1];
     StackItem *b = &stack->FieldOfItems[mark + 2];
     StackItem *c = &stack->FieldOfItems[mark + 3];
 
     if (count == 1 && a->type == ITEM_TERM && a->symbol == PREC_I) {
         ok = true;
+        newType = a->valType;
     }
 
     if (count == 2 && a->type == ITEM_TERM && (a->symbol == PREC_NOT || a->symbol == PREC_UMINUS) &&
         b->type == ITEM_NONTERM) {
         ok = true;
+        result = Operator(TYPE_UNDEFINED, b->valType, PrecToToken(a->symbol), &newType);
+        if (result != 0)
+            return result;
     }
 
     if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_TERM &&
         b->symbol == PREC_RPAREN) {
         ok = true;
+        newType = TYPE_UNIT;
     }
 
     if (count == 3 && a->type == ITEM_NONTERM && b->type == ITEM_TERM && b->symbol >= PREC_MUL &&
         b->symbol <= PREC_OR && c->type == ITEM_NONTERM) {
         ok = true;
+        result = Operator(a->valType, c->valType, PrecToToken(b->symbol), &newType);
+        if (result != 0)
+            return result;
     }
 
     if (count == 3 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_NONTERM &&
         c->type == ITEM_TERM && c->symbol == PREC_RPAREN) {
         ok = true;
+        newType = b->valType;
     }
 
     if (ok != true) {
@@ -854,7 +921,7 @@ static int StackReduce(PrecStack *stack) {
     StackItem item;
     item.type = ITEM_NONTERM;
     item.symbol = PREC_I;
-    item.valType = TYPE_UNDEFINED;
+    item.valType = newType;
     return StackPush(stack, item);
 }
 
@@ -925,7 +992,7 @@ static int Expr(Parser *parser, typeId *outType) {
 
         if (a == PREC_DOLLAR && b == PREC_DOLLAR) {
             if (stack.top == 2 && stack.FieldOfItems[1].type == ITEM_NONTERM) {
-                *outType = TYPE_UNDEFINED;
+                *outType = stack.FieldOfItems[1].valType;
                 return 0;
             } else {
                 return 2;
