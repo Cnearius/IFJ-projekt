@@ -30,6 +30,7 @@ typedef struct sTypeStore {
 
 static typeStore types;
 static symTable *rootTable;
+static bool mainAlreadyDefined;
 
 /**
  * @param types  ukazovatel na struct types
@@ -230,6 +231,7 @@ int SemAnalysisInit(void) {
         SemAnalysisFree();
         return 99;
     }
+    mainAlreadyDefined = false;
 
     return 0;
 }
@@ -279,13 +281,14 @@ int LeaveBlock(void) {
  * @param type typ ktory zadefinoval uzivatel pre premennu
  * @param isConst ci je premenna zadefinovana ako konstanta alebo nie
  * @param initType typ, ktory ma hodnota na pravej strane vyrazu
- * @return 99 v pripade neklasifikovanej internej chyby, v tomto pripade ak uzivatel nezada meno premennej
- * alebo sa premenna pushuje to root tabulky, do ktorej patria iba funkcie
+ * @return 99 v pripade neklasifikovanej internej chyby, v tomto pripade ak uzivatel nezada meno
+ * premennej alebo sa premenna pushuje to root tabulky, do ktorej patria iba funkcie
  * @return 6 ak su type a initType nekompatibilne alebo ked initType sa neda zistit
  * @return 4 v pripade ze bola premenna zadefinovana viackrat v tom istom bloku
  * @return 0 v pripade uspechu
- * @brief Funkcia pre deklaraciu premennej, urobi overenia ci bolo zadane meno a nepokusame 
- * pushnut do root tabulky, ci su kompatibilne datove typy, ak je vsetko v poriadku, zapise ju do scope tabulky.
+ * @brief Funkcia pre deklaraciu premennej, urobi overenia ci bolo zadane meno a nepokusame
+ * pushnut do root tabulky, ci su kompatibilne datove typy, ak je vsetko v poriadku, zapise ju do
+ * scope tabulky.
  */
 int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId initType) {
     if (name == NULL)
@@ -293,7 +296,8 @@ int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId
     if (IsRootScope(rootTable))
         return 99;
     if (hasType) {
-        if(!CheckTypeCompatibility(initType, type)) return 6;
+        if (!CheckTypeCompatibility(initType, type))
+            return 6;
     } else {
         if (initType == TYPE_UNDEFINED)
             return 6;
@@ -322,31 +326,78 @@ int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId
  * @brief Funkcia ktora ziska typ premennej alebo funkcie, pokial existuje
  */
 int GetVarType(const char *name, typeId *outType) {
-    if(name == NULL) return 99;
-    if(outType == NULL) return 99;
+    if (name == NULL)
+        return 99;
+    if (outType == NULL)
+        return 99;
     symbolData data;
     bool found;
     found = LookupVar(rootTable, name, &data);
-    if(!found) {
+    if (!found) {
         found = LookupFunction(rootTable, name, &data);
     }
-    if(!found) {
+    if (!found) {
         return 3;
     }
-    if(data.type == TYPE_UNDEFINED) return 99;
+    if (data.type == TYPE_UNDEFINED)
+        return 99;
     *outType = data.type;
 
     return 0;
 }
 
+/**
+ * @param name meno funkcie
+ * @param hasReturnType ci ma funkcia navratovy typ alebo nie
+ * @param returnType aky navratovy typ ma funkcia, ak ho ma, ak nie, zatial sa nastavi na
+ * TYPE_UNDEFINED a neskor sa zmeni podla posledneho riadku v tele funkcii
+ * @param paramTypes typy parammetrov funkcie
+ * @param paramCount kolko parametrov ma funkcia
+ * @param isMain ci je funkcia main alebo nie
+ * @return 99 v pripade internej chyby
+ * @return 5 v pripade ze isMain je true a funkcia obsahuje parametre
+ * @return 6 ak je funkcia main a ma uvedeny navratovy typ a jej navratovy typ nie je typu UNIT
+ * @return 4 ak je funkcia main, ale main funkcia uz bola definovana skor alebo ked deklarujeme
+ * funkciu ktora uz existuje
+ * @return 0 v pripade uspechu
+ * @brief Funkcia ktora zapise hlavicku deklarovanej funkcie pred tym, ako sa zacne parsovat telo.
+ * Toto tak musi byt preto ze specifikacia hovori ze funkcia moze byt volana aj pred tym ako je
+ * deklarovana.
+ */
 int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
                    const typeId *paramTypes, int paramCount, bool isMain) {
-    (void)name;
-    (void)hasReturnType;
-    (void)returnType;
-    (void)paramTypes;
-    (void)paramCount;
-    (void)isMain;
+    if (name == NULL)
+        return 99;
+    if (isMain && paramCount > 0)
+        return 5;
+    if (isMain && hasReturnType && returnType != TYPE_UNIT)
+        return 6;
+    if (isMain && mainAlreadyDefined)
+        return 4;
+
+    if (paramCount < 0 || (paramCount > 0 && paramTypes == NULL))
+        return 99;
+    if (!hasReturnType) {
+        returnType = TYPE_UNDEFINED;
+    }
+    typeId funType;
+    int success;
+    success = FunctionType(paramTypes, paramCount, returnType, &funType);
+    if (success == 99)
+        return 99;
+    symbolData data;
+    data.isConst = false;
+    data.isDefined = false;
+    data.isFunction = true;
+    data.paramCount = paramCount;
+    data.type = funType;
+    bool insertSuccess;
+    insertSuccess = InsertFunction(rootTable, name, data);
+    if (!insertSuccess)
+        return 4;
+    if (isMain) {
+        mainAlreadyDefined = true;
+    }
     return 0;
 }
 

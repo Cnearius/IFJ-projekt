@@ -133,7 +133,8 @@ static bool ResizeTable(symTable *table) {
 /**
  * @param key kluc ktory sa kopiruje
  * @return ukazovatel na novu kopiu kluca, NULL pri zlyhani alokacie
- * @brief pomocna funkcia, skopiruje kluc do novej pamate, lebo kluc ma vlastnit tabulka, nei uzivatel
+ * @brief pomocna funkcia, skopiruje kluc do novej pamate, lebo kluc ma vlastnit tabulka, nei
+ * uzivatel
  */
 static char *CopyKey(const char *key) {
     size_t len = strlen(key);
