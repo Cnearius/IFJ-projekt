@@ -54,9 +54,9 @@ static int SimpleLineRest(Parser *parser);
 static int BlockStmt(Parser *parser);
 static int SimpleStmt(Parser *parser);
 static int DefVar(Parser *parser);
-static int VarRest(Parser *parser, bool *hasType, typeId *type);
+static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType);
 static int RetStmt(Parser *parser);
-static int AssignAfter(Parser *parser);
+static int AssignAfter(Parser *parser, typeId *valueType);
 static int If(Parser *parser);
 static int Loop(Parser *parser);
 static int IfRest(Parser *parser);
@@ -1424,7 +1424,7 @@ static int ElseRest(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int SimpleStmt(Parser *parser) {
-
+    typeId valueType;
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
         int result = DefVar(parser);
         if (result != 0)
@@ -1452,12 +1452,12 @@ static int SimpleStmt(Parser *parser) {
 
         bool isAssign = Check(parser, TOKEN_ASSIGN);
 
-        result = AssignAfter(parser);
+        result = AssignAfter(parser, &valueType);
         if (result != 0)
             return result;
 
         if (isAssign) {
-            result = AssignValueToVar(name, TYPE_UNDEFINED);
+            result = AssignValueToVar(name, valueType);
             if (result != 0)
                 return result;
         }
@@ -1473,7 +1473,7 @@ static int SimpleStmt(Parser *parser) {
  */
 static int DefVar(Parser *parser) {
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
-
+        typeId initType;
         bool isConst;
         if (Check(parser, TOKEN_VAL)) {
             isConst = true;
@@ -1493,11 +1493,11 @@ static int DefVar(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = VarRest(parser, &hasType, &type);
+        result = VarRest(parser, &hasType, &type, &initType);
         if (result != 0)
             return result;
 
-        result = DeclareVar(name, hasType, type, isConst, TYPE_UNDEFINED);
+        result = DeclareVar(name, hasType, type, isConst, initType);
         if (result != 0)
             return result;
 
@@ -1512,9 +1512,10 @@ static int DefVar(Parser *parser) {
  * @param parser stav parsera s aktualnym tokenom
  * @param hasType adresa kam sa zapise ci ma premenna uvedeny typ
  * @param type adresa kam sa zapise uvedeny typ
+ * @param initType adresa kam sa zapise typ inicializovaneho vyrazu
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int VarRest(Parser *parser, bool *hasType, typeId *type) {
+static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType) {
     if (Check(parser, TOKEN_COLON)) {
 
         *hasType = true;
@@ -1531,8 +1532,7 @@ static int VarRest(Parser *parser, bool *hasType, typeId *type) {
         if (result != 0)
             return result;
 
-        typeId exprType;
-        result = Expr(parser, &exprType);
+        result = Expr(parser, initType);
         if (result != 0)
             return result;
 
@@ -1545,8 +1545,7 @@ static int VarRest(Parser *parser, bool *hasType, typeId *type) {
         if (result != 0)
             return result;
 
-        typeId exprType;
-        result = Expr(parser, &exprType);
+        result = Expr(parser, initType);
         if (result != 0)
             return result;
 
@@ -1579,21 +1578,22 @@ static int RetStmt(Parser *parser) {
 /**
  * @brief Spracovava volitelne priradenie ("= vyraz" za vyrazom)
  * @param parser stav parsera s aktualnym tokenom
+ * @param valueType adresa kam sa zapise typ pravej strany, UNDEFINED ak nie je priradenie 
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int AssignAfter(Parser *parser) {
+static int AssignAfter(Parser *parser, typeId *valueType) {
     if (Check(parser, TOKEN_ASSIGN)) {
         int result = Advance(parser);
         if (result != 0)
             return result;
 
-        typeId exprType;
-        result = Expr(parser, &exprType);
+        result = Expr(parser, valueType);
         if (result != 0)
             return result;
 
         return result;
     } else {
+        *valueType = TYPE_UNDEFINED;
         return 0;
     }
 }
