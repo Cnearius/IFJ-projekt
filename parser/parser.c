@@ -737,6 +737,7 @@ enum TypeOfItem {
 typedef struct {
     enum TypeOfItem type;
     enum PrecSymbol symbol;
+    typeId valType; ///< Datovy typ polozky
 } StackItem;
 
 /**
@@ -853,6 +854,7 @@ static int StackReduce(PrecStack *stack) {
     StackItem item;
     item.type = ITEM_NONTERM;
     item.symbol = PREC_I;
+    item.valType = TYPE_UNDEFINED;
     return StackPush(stack, item);
 }
 
@@ -885,11 +887,16 @@ static int MemberAccess(Parser *parser) {
 static int Expr(Parser *parser, typeId *outType) {
     bool prevOperand = false;
     bool isIdent;
+    TokenType tokType;
+    const char *tokName;
+    typeId opType;
+    bool isCall;
     PrecStack stack;
     stack.top = 0;
     StackItem item;
     item.type = ITEM_TERM;
     item.symbol = PREC_DOLLAR;
+    item.valType = TYPE_UNDEFINED;
     int result = StackPush(&stack, item);
     if (result != 0)
         return result;
@@ -922,6 +929,7 @@ static int Expr(Parser *parser, typeId *outType) {
                 return result;
             item.type = ITEM_TERM;
             item.symbol = a;
+            item.valType = TYPE_UNDEFINED;
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
@@ -930,16 +938,44 @@ static int Expr(Parser *parser, typeId *outType) {
                 depth++;
             }
             isIdent = Check(parser, TOKEN_IDENT);
-
+            tokType = parser->current.type;
+            tokName = parser->current.value;
             result = Advance(parser);
             if (result != 0)
                 return result;
             if (isIdent && Check(parser, TOKEN_LPAREN)) {
+                isCall = true;
                 result = CallArgs(parser);
                 if (result != 0)
                     return result;
+            } else {
+                isCall = false;
             }
             if (a == PREC_I) {
+                opType = TYPE_UNDEFINED;
+                if (tokType == TOKEN_INT_LITERAL) {
+                    opType = TYPE_INT;
+                } else if (tokType == TOKEN_DOUBLE_LITERAL) {
+                    opType = TYPE_DOUBLE;
+                } else if (tokType == TOKEN_STRING_LITERAL || tokType == TOKEN_INTERPOLATED) {
+                    opType = TYPE_STRING;
+                } else if (tokType == TOKEN_TRUE_LITERAL || tokType == TOKEN_FALSE_LITERAL) {
+                    opType = TYPE_BOOLEAN;
+                } else if (tokType == TOKEN_UNIT_LITERAL) {
+                    opType = TYPE_UNIT;
+                }
+
+                if (tokType == TOKEN_IDENT) {
+                    if (isCall) {
+                        opType = TYPE_UNDEFINED;
+                        // TODO 5b-2: Call
+                    } else {
+                        result = GetVarType(tokName, &opType);
+                        if (result != 0)
+                            return result;
+                    }
+                }
+                stack.FieldOfItems[stack.top - 1].valType = opType;
                 result = MemberAccess(parser);
                 if (result != 0)
                     return result;
@@ -949,6 +985,7 @@ static int Expr(Parser *parser, typeId *outType) {
         case '=':
             item.type = ITEM_TERM;
             item.symbol = a;
+            item.valType = TYPE_UNDEFINED;
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
