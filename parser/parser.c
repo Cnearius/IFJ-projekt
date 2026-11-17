@@ -1420,7 +1420,21 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
+    for (int i = 0; i < parser->paramCount; i++) {
+        result = PutFuncParamAside(parser->paramNames[i], parser->paramTypes[i]);
+        if (result != 0)
+            return result;
+    }
+
+    result = FuncBodyStart();
+    if (result != 0)
+        return result;
+
     result = FunHasBody(parser);
+    if (result != 0)
+        return result;
+
+    result = FuncBodyEnd();
     if (result != 0)
         return result;
 
