@@ -799,7 +799,7 @@ static int StackInsertMark(PrecStack *stack, int termIndex) {
 /**
  * @brief Prevod symbolu operatora z tabulky na typ tokenu (unarne minus je TOKEN_MINUS)
  * @param s precedencny symbol operatora
- * @return typ tokenu, EOF ak symbol nie je operator 
+ * @return typ tokenu, EOF ak symbol nie je operator
  */
 static TokenType PrecToToken(enum PrecSymbol s) {
     switch (s) {
@@ -1297,6 +1297,10 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
+    result = ConditionType(exprType);
+    if (result != 0)
+        return result;
+
     result = Expect(parser, TOKEN_THEN);
     if (result != 0)
         return result;
@@ -1336,6 +1340,10 @@ static int Loop(Parser *parser) {
 
     typeId exprType;
     result = Expr(parser, &exprType);
+    if (result != 0)
+        return result;
+
+    result = ConditionType(exprType);
     if (result != 0)
         return result;
 
@@ -1564,10 +1572,14 @@ static int RetStmt(Parser *parser) {
         return result;
 
     if (Check(parser, TOKEN_EOL) || Check(parser, TOKEN_SEMICOLON)) {
-        return 0;
+        result = Return(false, TYPE_UNDEFINED);
+        return result;
     } else {
         typeId exprType;
         result = Expr(parser, &exprType);
+        if (result != 0)
+            return result;
+        result = Return(true, exprType);
         if (result != 0)
             return result;
 
@@ -1578,7 +1590,7 @@ static int RetStmt(Parser *parser) {
 /**
  * @brief Spracovava volitelne priradenie ("= vyraz" za vyrazom)
  * @param parser stav parsera s aktualnym tokenom
- * @param valueType adresa kam sa zapise typ pravej strany, UNDEFINED ak nie je priradenie 
+ * @param valueType adresa kam sa zapise typ pravej strany, UNDEFINED ak nie je priradenie
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int AssignAfter(Parser *parser, typeId *valueType) {
@@ -1720,6 +1732,10 @@ static int Program(Parser *parser) {
         return result;
 
     result = FunList(parser);
+    if (result != 0)
+        return result;
+
+    result = CheckMain();
     if (result != 0)
         return result;
 
