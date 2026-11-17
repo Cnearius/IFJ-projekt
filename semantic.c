@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "semantic.h"
+#include "symtable.h"
 #include "types.h"
 
 #define TYPE_ID_BASE 100
@@ -28,24 +29,7 @@ typedef struct sTypeStore {
 } typeStore;
 
 static typeStore types;
-
-/**
- * @brief inicializuje semanticku analyzu
- */
-int SemAnalysisInit(void) { return 0; }
-
-/**
- * @brief uvolni pamat na konci semantickej analyzi
- */
-void SemAnalysisFree(void) {
-    for (int i = 0; i < types.filledCount; i++) {
-        free(types.functionTypes[i].idParams);
-    }
-    free(types.functionTypes);
-    types.functionTypes = NULL;
-    types.filledCount = 0;
-    types.capacity = 0;
-}
+static symTable *rootTable;
 
 /**
  * @param types  ukazovatel na struct types
@@ -119,6 +103,137 @@ int FunctionType(const typeId *params, int paramCount, typeId returnType, typeId
     *outId = TYPE_ID_BASE + types.filledCount;
     types.filledCount++;
     return 0;
+}
+
+/**
+ * @param name meno build-in funkcie, taktiez sluzi ako kluc pri ukladani do symtable
+ * @param params pole parametrov ktore funkcia berie, moze byt aj NULL alebo jeden alebo viacero
+ * @param paramCount pocet paremetrov ktore funkcia berie, ak je params NULL paramCount je 0
+ * @param returnType navratovy typ built-in funkcie
+ * @return Vracia Int, 0 v pripade uspechu, 99 v pripade neuspechu
+ * @brief Helper funkcia pre vkladanie built-in funkcii do root tabulky, tato funkcia sa pouziva iba
+ * v SemAnalysisInit, nech SemAnalysisInit nie je priliz dlha
+ */
+static int InsertBuiltIn(const char *name, const typeId *params, int paramCount,
+                         typeId returnType) {
+    int success;
+    typeId funType;
+    success = FunctionType(params, paramCount, returnType, &funType);
+    if (success == 99)
+        return 99;
+    symbolData data;
+    data.isConst = false;
+    data.isDefined = true;
+    data.isFunction = true;
+    data.type = funType;
+    data.paramCount = paramCount;
+    bool insertSuccess;
+    insertSuccess = InsertFunction(rootTable, name, data);
+    if (!insertSuccess)
+        return 99;
+    return 0;
+}
+
+/**
+ * @return 0 v pripade uspechu, 99 v pripade neuspechu
+ * @brief inicializuje semanticku analyzu, vytvori root uroven symtable, naplni ju built in
+ * funkciami
+ */
+int SemAnalysisInit(void) {
+    rootTable = InitTable(23);
+    if (rootTable == NULL)
+        return 99;
+    int insertSuccess;
+    // print funkcia
+    typeId params = {TYPE_ANY};
+    insertSuccess = InsertBuiltIn("print", &params, 1, TYPE_UNIT);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // readLine funkcia
+    insertSuccess = InsertBuiltIn("readLine", NULL, 0, TYPE_STRING);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+
+    // readInt funkcia
+    insertSuccess = InsertBuiltIn("readInt", NULL, 0, TYPE_INT);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // readDouble funkcia
+    insertSuccess = InsertBuiltIn("readDouble", NULL, 0, TYPE_DOUBLE);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // toStr funkcia
+    insertSuccess = InsertBuiltIn("toStr", &params, 1, TYPE_STRING);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // toInt funkcia
+    params = TYPE_DOUBLE;
+    insertSuccess = InsertBuiltIn("toInt", &params, 1, TYPE_INT);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // strLength funkcia
+    params = TYPE_STRING;
+    insertSuccess = InsertBuiltIn("strLength", &params, 1, TYPE_INT);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // subStr funkcia
+    typeId subStrParams[3] = {TYPE_STRING, TYPE_INT, TYPE_INT};
+    insertSuccess = InsertBuiltIn("subStr", subStrParams, 3, TYPE_STRING);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // ord funkcia
+    typeId ordParams[2] = {TYPE_STRING, TYPE_INT};
+    insertSuccess = InsertBuiltIn("ord", ordParams, 2, TYPE_INT);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // chr funkcia
+    typeId chrParams = {TYPE_INT};
+    insertSuccess = InsertBuiltIn("chr", &chrParams, 1, TYPE_STRING);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+    // readBoolean funkcia
+    insertSuccess = InsertBuiltIn("readBoolean", NULL, 0, TYPE_BOOLEAN);
+    if (insertSuccess == 99) {
+        SemAnalysisFree();
+        return 99;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief uvolni pamat na konci semantickej analyzi
+ */
+void SemAnalysisFree(void) {
+    FreeAllTables(rootTable);
+    rootTable = NULL;
+    for (int i = 0; i < types.filledCount; i++) {
+        free(types.functionTypes[i].idParams);
+    }
+    free(types.functionTypes);
+    types.functionTypes = NULL;
+    types.filledCount = 0;
+    types.capacity = 0;
 }
 
 int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
