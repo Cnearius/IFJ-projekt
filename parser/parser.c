@@ -42,6 +42,7 @@ typedef struct {
     typeId lastComType;         ///< typ posledneho vyrazu
     bool lastIfAllReturn;       ///< ci vsetky vetvy posledneho if koncia returnom
     bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
+    bool inferPass;             ///< ci prave bezi inferencny prechod
 } Parser;
 
 static int Advance(Parser *parser);
@@ -80,6 +81,8 @@ static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
 static int MemberAccess(Parser *parser, typeId *type);
 static int CloseStatement(Parser *parser);
 static void BranchEnd(Parser *parser, bool *endsReturn, bool *endsUnit);
+static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasRet, typeId retType);
+static void ResetParserPosition(Parser *parser);
 
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
@@ -130,6 +133,17 @@ static void FreeBuffer(Parser *parser) {
     parser->fieldOfTokens = NULL;
     parser->count = 0;
     parser->capacity = 0;
+}
+
+/**
+ * @brief  vrati parser na zaciatok pola tokenov
+ * @param  parser stav parsera s aktualnym tokenom
+ */
+static void ResetParserPosition(Parser *parser) {
+    parser->position = 0;
+    parser->current = parser->fieldOfTokens[0];
+    parser->tokenCount = 0;
+    parser->prevLine = 0;
 }
 
 /**
@@ -1717,37 +1731,17 @@ static int AssignAfter(Parser *parser, typeId *valueType) {
 }
 
 /**
- * @brief Spracuje definiciu funkcie v tvare : def meno(parametre) [: typ] = telo
+ * @brief skontroluje telo funkcie od FuncBodyStart po FuncBodyEnd
  * @param parser stav parsera s aktualnym tokenom
+ * @param name meno funkcie
  * @param isMain ci ide o funkciu main
- * @return vysledok spracovania pravidla definicie funkcie
+ * @param hasRet ci ma funkcia uvedeny navratovy typ
+ * @param retType uvedeny navratovy typ funkcie
+ * @return 0 ak OK, alebo kod chyby (1/2/99)
  */
-static int Fun(Parser *parser, bool isMain) {
-    typeId retType;
-    bool hasRet;
-    int result = Expect(parser, TOKEN_DEF);
-    if (result != 0)
-        return result;
-
-    const char *name = parser->current.value;
-
-    result = Expect(parser, TOKEN_IDENT);
-    if (result != 0)
-        return result;
-
-    result = Params(parser);
-    if (result != 0)
-        return result;
-
-    result = FunOptions(parser, &hasRet, &retType);
-    if (result != 0)
-        return result;
-
-    result = Expect(parser, TOKEN_ASSIGN);
-    if (result != 0)
-        return result;
-
-    result =
+static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasRet,
+                        typeId retType) {
+    int result =
         FuncBodyStart(name, parser->paramNames, parser->paramTypes, parser->paramCount, isMain);
     if (result != 0)
         return result;
@@ -1801,6 +1795,58 @@ static int Fun(Parser *parser, bool isMain) {
     result = FuncBodyEnd(hasResult, resultType);
     if (result != 0)
         return result;
+
+    return 0;
+}
+
+/**
+ * @brief Spracuje definiciu funkcie v tvare : def meno(parametre) [: typ] = telo
+ * @param parser stav parsera s aktualnym tokenom
+ * @param isMain ci ide o funkciu main
+ * @return vysledok spracovania pravidla definicie funkcie
+ */
+static int Fun(Parser *parser, bool isMain) {
+    typeId retType;
+    bool hasRet;
+    int result = Expect(parser, TOKEN_DEF);
+    if (result != 0)
+        return result;
+
+    const char *name = parser->current.value;
+
+    result = Expect(parser, TOKEN_IDENT);
+    if (result != 0)
+        return result;
+
+    result = Params(parser);
+    if (result != 0)
+        return result;
+
+    result = FunOptions(parser, &hasRet, &retType);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_ASSIGN);
+    if (result != 0)
+        return result;
+
+    if (parser->inferPass && FunctionHasType(name)) {
+        result = SkipBody(parser);
+        return result;
+    }
+
+    size_t bodyStart = parser->position;
+
+    result = FunBodyCheck(parser, name, isMain, hasRet, retType);
+    if (result != 0 && parser->inferPass) {
+        result = AbortFuncBody();
+        if (result != 0) {
+            return result;
+        }
+        parser->position = bodyStart;
+        parser->current = parser->fieldOfTokens[bodyStart];
+        return SkipBody(parser);
+    }
 
     return result;
 }
@@ -1910,6 +1956,7 @@ int Parse(Lexer *lexer) {
     parser.lastKind = STMT_NONE;
     parser.lastIfAllReturn = false;
     parser.lastIfAllUnit = false;
+    parser.inferPass = false;
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
@@ -1926,10 +1973,30 @@ int Parse(Lexer *lexer) {
         SemAnalysisFree();
         return result;
     }
-    parser.position = 0;
-    parser.current = parser.fieldOfTokens[0];
-    parser.tokenCount = 0;
-    parser.prevLine = 0;
+    int before;
+    parser.inferPass = true;
+    SemInferMode(true);
+    do {
+        before = DefinedFunctionCount();
+        ResetParserPosition(&parser);
+        result = Program(&parser);
+        if (result == 99) {
+            FreeBuffer(&parser);
+            SemAnalysisFree();
+            return 99;
+        }
+
+    } while (DefinedFunctionCount() > before);
+
+    result = ResetSemAnalysisForFinalAnalysis();
+    if (result != 0) {
+        FreeBuffer(&parser);
+        SemAnalysisFree();
+        return result;
+    }
+
+    parser.inferPass = false;
+    ResetParserPosition(&parser);
     result = Program(&parser);
     FreeBuffer(&parser);
     SemAnalysisFree();

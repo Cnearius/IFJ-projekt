@@ -1,0 +1,11 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na dopredne volania funkcii bez uvedeneho typu"
+// Ocakavany kod: 0 - a vola b definovanu nizsie, ani jedna nema typ
+import ifj26.*
+
+@main def main(): Unit =
+    val x = a()
+
+def a() = b()
+
+def b() = 5
