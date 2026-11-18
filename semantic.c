@@ -37,10 +37,21 @@ typedef struct {
     bool sawReturn;
 } currentFunction;
 
+typedef struct {
+    char *name;
+    bool hasExplicitReturn;
+} functionInfo;
+
 static typeStore types;
 static symTable *rootTable;
 static bool mainAlreadyDefined;
 static currentFunction currentFn;
+static bool analysisInferMode;
+static int bodyBlockDepth;
+static int blockDepth;
+static functionInfo *functionList;
+static int functionCount;
+static int functionCapacity;
 
 /**
  * @param types  ukazovatel na struct types
@@ -142,6 +153,149 @@ static int InsertBuiltIn(const char *name, const typeId *params, int paramCount,
     insertSuccess = InsertFunction(rootTable, name, data);
     if (!insertSuccess)
         return 99;
+    return 0;
+}
+
+/**
+ * @param enabled
+ * @brief funkcia na prepinamie modu semantickej analyzy medzi inferencnym modom a modom na ostro
+ */
+void SemInferMode(bool enabled) { analysisInferMode = enabled; }
+
+/**
+ * @brief prerusi telo v inferencnom rezime a zavrie vsetky jeho scopes
+ */
+int AbortFuncBody(void) {
+    if (currentFn.name == NULL)
+        return 0;
+    int result = 0;
+    while (blockDepth > bodyBlockDepth) {
+        if (!PopScope(rootTable)) {
+            result = 99;
+            break;
+        }
+        blockDepth--;
+    }
+    if (result == 0 && !PopScope(rootTable))
+        result = 99;
+    free(currentFn.name);
+    currentFn.name = NULL;
+    currentFn.sawReturn = false;
+    return result;
+}
+
+/**
+ * @param name meno funkcie
+ * @return ukazatel na zaznam alebo NULL
+ * @brief najde zaznam funkcie v pomocnom zozname
+ */
+static functionInfo *FindFunctionInfo(const char *name) {
+    if (name == NULL)
+        return NULL;
+    for (int i = 0; i < functionCount; i++) {
+        if (strcmp(functionList[i].name, name) == 0)
+            return &functionList[i];
+    }
+    return NULL;
+}
+
+/**
+ * @param name meno funkcie
+ * @param hasExplicitReturn ci mal typ v zdroji
+ * @return 0 pri uspechu, 99 pri zlyhani alokacie
+ * @brief zapise alebo aktualizuje zaznam funkcie v pomocnom zozname
+ */
+static int RegisterFunctionInfo(const char *name, bool hasExplicitReturn) {
+    if (name == NULL)
+        return 99;
+    functionInfo *existing;
+    existing = FindFunctionInfo(name);
+    if (existing != NULL) {
+        existing->hasExplicitReturn = hasExplicitReturn;
+        return 0;
+    }
+    if (functionCount == functionCapacity) {
+        int newCapacity = functionCapacity == 0 ? 16 : functionCapacity * 2;
+        functionInfo *newList = realloc(functionList, (size_t)newCapacity * sizeof(functionInfo));
+        if (newList == NULL)
+            return 99;
+        functionList = newList;
+        functionCapacity = newCapacity;
+    }
+    size_t length = strlen(name);
+    char *copy = malloc(length + 1);
+    if (copy == NULL)
+        return 99;
+    memcpy(copy, name, length + 1);
+    functionList[functionCount].name = copy;
+    functionList[functionCount].hasExplicitReturn = hasExplicitReturn;
+    functionCount++;
+    return 0;
+}
+
+/**
+ * @param name meno funkcie
+ * @return true ak je navratovy typ funkcie uz znamy
+ * @brief zisti, ci ma funkcia uz odvodeny alebo uvedeny navratovy typ
+ */
+bool FunctionHasType(const char *name) {
+    if (name == NULL || rootTable == NULL)
+        return false;
+    symbolData data;
+    if (!LookupFunction(rootTable, name, &data))
+        return false;
+    int index = data.type - TYPE_ID_BASE;
+    if (index < 0 || index >= types.filledCount)
+        return false;
+    return types.functionTypes[index].returnId != TYPE_UNDEFINED;
+}
+
+/**
+ * @return pocet funkcii so znamym navratovym typom
+ * @brief pouziva sa na zistenie pokroku medzi inferencnymi prechodmi
+ */
+int DefinedFunctionCount(void) {
+    int count = 0;
+    for (int i = 0; i < functionCount; i++) {
+        if (FunctionHasType(functionList[i].name))
+            count++;
+    }
+    return count;
+}
+
+/**
+ * @return 0 v pripade uspechu
+ * @return 99 v pripade internej chyby
+ * @brief zresetuje semanticku analyzu a pripravi ju na poriadny prechod
+ */
+int ResetSemAnalysisForFinalAnalysis(void) {
+    SemInferMode(false);
+    if (rootTable == NULL)
+        return 0;
+    if (currentFn.name != NULL) {
+        free(currentFn.name);
+        currentFn.name = NULL;
+        currentFn.sawReturn = false;
+    }
+    while (!IsRootScope(rootTable)) {
+        if (!PopScope(rootTable))
+            return 99;
+    }
+    blockDepth = 0;
+    bodyBlockDepth = 0;
+
+    for (int i = 0; i < functionCount; i++) {
+        symbolData data;
+        if (!LookupFunction(rootTable, functionList[i].name, &data))
+            return 99;
+        if (!data.isDefined)
+            continue;
+        data.isDefined = false;
+        if (!DeleteItem(rootTable, functionList[i].name))
+            return 99;
+        if (!InsertFunction(rootTable, functionList[i].name, data))
+            return 99;
+    }
     return 0;
 }
 
@@ -248,7 +402,8 @@ int SemAnalysisInit(void) {
         return 99;
     }
     mainAlreadyDefined = false;
-
+    blockDepth = 0;
+    bodyBlockDepth = 0;
     return 0;
 }
 
@@ -267,6 +422,16 @@ void SemAnalysisFree(void) {
     types.functionTypes = NULL;
     types.filledCount = 0;
     types.capacity = 0;
+    SemInferMode(false);
+    blockDepth = 0;
+    bodyBlockDepth = 0;
+
+    for (int i = 0; i < functionCount; i++)
+        free(functionList[i].name);
+    free(functionList);
+    functionList = NULL;
+    functionCount = 0;
+    functionCapacity = 0;
 }
 
 /**
@@ -278,6 +443,7 @@ int EnterBlock(void) {
     success = PushScope(rootTable);
     if (!success)
         return 99;
+    blockDepth += 1;
     return 0;
 }
 
@@ -290,6 +456,8 @@ int LeaveBlock(void) {
     success = PopScope(rootTable);
     if (!success)
         return 99;
+    if (blockDepth > 0)
+        blockDepth -= 1;
     return 0;
 }
 
@@ -413,6 +581,8 @@ int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
     insertSuccess = InsertFunction(rootTable, name, data);
     if (!insertSuccess)
         return 4;
+    if (RegisterFunctionInfo(name, hasReturnType) != 0)
+        return 99;
     if (isMain) {
         mainAlreadyDefined = true;
     }
@@ -481,7 +651,7 @@ static int GetReturnType(const typeId funType, int argCount, const typeId *argTy
             return 5;
     }
     if (signature->returnId == TYPE_UNDEFINED)
-        return 6;
+        return analysisInferMode ? NOT_YET_KNOWN_RETURN_TYPE : 6;
     *outReturnType = signature->returnId;
     return 0;
 }
@@ -551,7 +721,7 @@ int FuncBodyStart(const char *name, const char **paramNames, const typeId *param
     symbolData functionData;
     if (!LookupFunction(rootTable, name, &functionData))
         return 99;
-    if (functionData.isDefined)
+    if (functionData.isDefined && !analysisInferMode)
         return 99;
     int index = functionData.type - TYPE_ID_BASE;
     if (index < 0 || index >= types.filledCount)
@@ -559,7 +729,9 @@ int FuncBodyStart(const char *name, const char **paramNames, const typeId *param
     funcType *signature = &types.functionTypes[index];
     if (paramCount != signature->paramCount)
         return 99;
-
+    functionInfo *info = FindFunctionInfo(name);
+    if (info == NULL)
+        return 99;
     if (!PushScope(rootTable))
         return 99;
 
@@ -591,9 +763,10 @@ int FuncBodyStart(const char *name, const char **paramNames, const typeId *param
 
     currentFn.name = nameCopy;
     currentFn.declaredReturn = signature->returnId;
-    currentFn.hasExplicitReturn = (signature->returnId != TYPE_UNDEFINED);
+    currentFn.hasExplicitReturn = info->hasExplicitReturn;
     currentFn.isMain = isMain;
     currentFn.sawReturn = false;
+    bodyBlockDepth = blockDepth;
     return 0;
 }
 

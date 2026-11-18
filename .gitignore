@@ -1,3 +1,5 @@
 compiler
 *.o
 lexer_test
+/build
+/doc
