@@ -8,10 +8,10 @@ import ifj26.*
   val x = 5
   var y: Int = x
   y = 10
-  if x then
+  if x > 0 then
     y = 1
   else
     y = 2
-  while y do
+  while y < 3 do
     y = 3
   return

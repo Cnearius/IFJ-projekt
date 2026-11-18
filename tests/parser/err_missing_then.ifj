@@ -5,6 +5,7 @@
 import ifj26.*
 
 @main def main(): Unit =
+  val x = true
   if x
     val y = 1
   else

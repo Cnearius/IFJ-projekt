@@ -6,23 +6,40 @@
  */
 
 #include "parser.h"
+#include "../semantic.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+
+/**
+ * @brief enum na druh posledneho prikazu
+ */
+enum StmtKind {
+    STMT_NONE,
+    STMT_EXPR,
+    STMT_UNIT,
+    STMT_RETURN,
+    STMT_IF,
+};
 
 /**
  * @brief struktura ktora si pameta aktualny stav parsera takze vsetko co si parser potrebuje pocas
  * prace pametat
  */
 typedef struct {
-    Lexer *lexer;         ///< lexer z ktoreho parser berie tokeny
-    Token current;        ///< konkretny token ktory parser aktualne kontroluje
-    size_t prevLine;      ///< riadok predchadzajuceho tokenu
-    size_t tokenCount;    ///< pocet zjedenych tokenov
-    Token *fieldOfTokens; ///< vsetky tokeny zo vstupu za sebou
-    size_t count;         ///< kolko tokenov v poli naozaj je
-    size_t capacity;      ///< na kolko tokenov je pamet zatial alokovana
-    size_t position;      ///< index tokenu ktory je prave v current
+    Lexer *lexer;               ///< lexer z ktoreho parser berie tokeny
+    Token current;              ///< konkretny token ktory parser aktualne kontroluje
+    size_t prevLine;            ///< riadok predchadzajuceho tokenu
+    size_t tokenCount;          ///< pocet zjedenych tokenov
+    Token *fieldOfTokens;       ///< vsetky tokeny zo vstupu za sebou
+    size_t count;               ///< kolko tokenov v poli naozaj je
+    size_t capacity;            ///< na kolko tokenov je pamet zatial alokovana
+    size_t position;            ///< index tokenu ktory je prave v current
+    typeId paramTypes[64];      ///< pole na typy parametrov aktualnej funkcie
+    const char *paramNames[64]; ///< pole na mena parametrov aktualnej funkcie
+    int paramCount;             ///< pocet parametrov aktualnej funkcie
+    enum StmtKind lastKind;     ///< druh posledneho vyrazu
+    typeId lastComType;         ///< typ posledneho vyrazu
 } Parser;
 
 static int Advance(Parser *parser);
@@ -30,19 +47,19 @@ static bool Check(Parser *parser, TokenType type);
 static int Expect(Parser *parser, TokenType type);
 static int Program(Parser *parser);
 static int FunList(Parser *parser);
-static int Fun(Parser *parser);
+static int Fun(Parser *parser, bool isMain);
 static int FunMain(Parser *parser);
 static int Params(Parser *parser);
-static int FunOptions(Parser *parser);
+static int FunOptions(Parser *parser, bool *hasRet, typeId *retType);
 static int FunHasBody(Parser *parser);
 static int RestParams(Parser *parser);
 static int MoreParams(Parser *parser);
 static int ParamAfterComma(Parser *parser);
-static int DataType(Parser *parser);
+static int DataType(Parser *parser, typeId *outType);
 static int FuncTypeParams(Parser *parser);
 static int FuncTypeRest(Parser *parser);
 static int FunBody(Parser *parser);
-static int Expr(Parser *parser);
+static int Expr(Parser *parser, typeId *outType);
 static int StmtList(Parser *parser);
 static int StmtListRest(Parser *parser);
 static int LineType(Parser *parser);
@@ -50,15 +67,16 @@ static int SimpleLineRest(Parser *parser);
 static int BlockStmt(Parser *parser);
 static int SimpleStmt(Parser *parser);
 static int DefVar(Parser *parser);
-static int VarRest(Parser *parser);
+static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType);
 static int RetStmt(Parser *parser);
-static int AssignAfter(Parser *parser);
+static int AssignAfter(Parser *parser, typeId *valueType);
 static int If(Parser *parser);
 static int Loop(Parser *parser);
 static int IfRest(Parser *parser);
 static int ElseRest(Parser *parser);
-static int CallArgs(Parser *parser);
-static int MemberAccess(Parser *parser);
+static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
+static int MemberAccess(Parser *parser, typeId *type);
+static int CloseStatement(Parser *parser);
 
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
@@ -162,6 +180,9 @@ static int SkipBody(Parser *parser) {
  * @return 0 ak OK, inak error kod
  */
 static int HeaderPass(Parser *parser) {
+    bool hasRet;
+    typeId retType;
+    bool isMain = false;
     int result = Expect(parser, TOKEN_IMPORT);
     if (result != 0)
         return result;
@@ -189,6 +210,7 @@ static int HeaderPass(Parser *parser) {
 
     while (true) {
         if (Check(parser, TOKEN_MAIN)) {
+            isMain = true;
             result = Advance(parser);
             if (result != 0)
                 return result;
@@ -202,6 +224,8 @@ static int HeaderPass(Parser *parser) {
             if (result != 0)
                 return result;
 
+            const char *name = parser->current.value;
+
             result = Expect(parser, TOKEN_IDENT);
             if (result != 0)
                 return result;
@@ -210,11 +234,16 @@ static int HeaderPass(Parser *parser) {
             if (result != 0)
                 return result;
 
-            result = FunOptions(parser);
+            result = FunOptions(parser, &hasRet, &retType);
             if (result != 0)
                 return result;
 
-            // TODO: FunctionHeader (az bude semantic.h)
+            result = FunctionHeader(name, hasRet, retType, parser->paramTypes, parser->paramCount,
+                                    isMain);
+            if (result != 0)
+                return result;
+
+            isMain = false;
 
             result = Expect(parser, TOKEN_ASSIGN);
             if (result != 0)
@@ -274,6 +303,7 @@ static int Expect(Parser *parser, TokenType type) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int Params(Parser *parser) {
+    parser->paramCount = 0;
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
         return result;
@@ -291,6 +321,7 @@ static int Params(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int RestParams(Parser *parser) {
+    const char *name = parser->current.value;
     if (Check(parser, TOKEN_RPAREN)) {
         int result = Advance(parser);
         return result;
@@ -302,10 +333,18 @@ static int RestParams(Parser *parser) {
         result = Expect(parser, TOKEN_COLON);
         if (result != 0)
             return result;
-
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
+
+        if (parser->paramCount == 64) {
+            return 99;
+        } else {
+            parser->paramNames[parser->paramCount] = name;
+            parser->paramTypes[parser->paramCount] = type;
+            parser->paramCount++;
+        }
 
         result = MoreParams(parser);
         if (result != 0)
@@ -343,6 +382,7 @@ static int MoreParams(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int ParamAfterComma(Parser *parser) {
+    const char *name = parser->current.value;
     if (Check(parser, TOKEN_RPAREN)) {
         if (parser->current.line ==
             parser->prevLine) { // A1: koncova ciarka len ak je medzi nou a ")" novy riadok
@@ -359,9 +399,18 @@ static int ParamAfterComma(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
+
+        if (parser->paramCount == 64) {
+            return 99;
+        } else {
+            parser->paramNames[parser->paramCount] = name;
+            parser->paramTypes[parser->paramCount] = type;
+            parser->paramCount++;
+        }
 
         result = MoreParams(parser);
         if (result != 0)
@@ -374,20 +423,24 @@ static int ParamAfterComma(Parser *parser) {
 /**
  * @brief Spracovava volitelny navratovy typ funkcie ": Typ"
  * @param parser stav parsera s aktualnym tokenom
+ * @param hasRet ci ma funkcia navratovy typ
+ * @param retType kam sa zapise navratovy typ
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int FunOptions(Parser *parser) {
+static int FunOptions(Parser *parser, bool *hasRet, typeId *retType) {
     if (Check(parser, TOKEN_COLON)) {
+        *hasRet = true;
         int result = Advance(parser);
         if (result != 0)
             return result;
-
-        result = DataType(parser);
+        result = DataType(parser, retType);
         if (result != 0)
             return result;
 
         return result;
     } else {
+        *hasRet = false;
+        *retType = TYPE_UNDEFINED;
         return 0;
     }
 }
@@ -396,16 +449,37 @@ static int FunOptions(Parser *parser) {
  * @brief Spracovava samotny jednoduchy datovy typ (Int, Double, ...) alebo funkcny typ ((T1, T2) =>
  * R)(LAMBDAS)
  * @param parser stav parsera s aktualnym tokenom
+ * @param outType kam sa zapise precitany typ
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int DataType(Parser *parser) {
-    if (Check(parser, TOKEN_UNIT) || Check(parser, TOKEN_INT) || Check(parser, TOKEN_DOUBLE) ||
-        Check(parser, TOKEN_STRING) || Check(parser, TOKEN_BOOL)) {
+static int DataType(Parser *parser, typeId *outType) {
+    if (Check(parser, TOKEN_UNIT)) {
+        *outType = TYPE_UNIT;
         int result = Advance(parser);
         if (result != 0)
             return result;
-        return result;
+    } else if (Check(parser, TOKEN_INT)) {
+        *outType = TYPE_INT;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    } else if (Check(parser, TOKEN_DOUBLE)) {
+        *outType = TYPE_DOUBLE;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    } else if (Check(parser, TOKEN_STRING)) {
+        *outType = TYPE_STRING;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    } else if (Check(parser, TOKEN_BOOL)) {
+        *outType = TYPE_BOOLEAN;
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
     } else if (Check(parser, TOKEN_LPAREN)) {
+        typeId retType;
         int result = Advance(parser);
         if (result != 0)
             return result;
@@ -422,14 +496,16 @@ static int DataType(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        result = DataType(parser, &retType);
         if (result != 0)
             return result;
 
+        *outType = TYPE_UNDEFINED; // TODO LAMBDAS
         return result;
     } else {
         return 2;
     }
+    return 0;
 }
 
 /**
@@ -441,7 +517,8 @@ static int FuncTypeParams(Parser *parser) {
     if (Check(parser, TOKEN_RPAREN)) {
         return 0;
     } else {
-        int result = DataType(parser);
+        typeId type;
+        int result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -464,7 +541,8 @@ static int FuncTypeRest(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        typeId type;
+        result = DataType(parser, &type);
         if (result != 0)
             return result;
 
@@ -496,13 +574,17 @@ static int FunHasBody(Parser *parser) {
         return result;
     } else {
         // TODO A2: blokova lambda nema EOL
-        int result = Expr(parser);
+        typeId exprType;
+        int result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
         result = Expect(parser, TOKEN_EOL);
         if (result != 0)
             return result;
+
+        parser->lastKind = STMT_EXPR;
+        parser->lastComType = exprType;
 
         return result;
     }
@@ -672,6 +754,7 @@ enum TypeOfItem {
 typedef struct {
     enum TypeOfItem type;
     enum PrecSymbol symbol;
+    typeId valType; ///< Datovy typ polozky
 } StackItem;
 
 /**
@@ -731,9 +814,64 @@ static int StackInsertMark(PrecStack *stack, int termIndex) {
 }
 
 /**
+ * @brief Prevod symbolu operatora z tabulky na typ tokenu (unarne minus je TOKEN_MINUS)
+ * @param s precedencny symbol operatora
+ * @return typ tokenu, EOF ak symbol nie je operator
+ */
+static TokenType PrecToToken(enum PrecSymbol s) {
+    switch (s) {
+    case PREC_MUL:
+        return TOKEN_MUL;
+
+    case PREC_DIV:
+        return TOKEN_DIV;
+
+    case PREC_PLUS:
+        return TOKEN_PLUS;
+
+    case PREC_MINUS:
+        return TOKEN_MINUS;
+
+    case PREC_LT:
+        return TOKEN_LT;
+
+    case PREC_LTE:
+        return TOKEN_LTE;
+
+    case PREC_GT:
+        return TOKEN_GT;
+
+    case PREC_GTE:
+        return TOKEN_GTE;
+
+    case PREC_EQ:
+        return TOKEN_EQ;
+
+    case PREC_NEQ:
+        return TOKEN_NEQ;
+
+    case PREC_AND:
+        return TOKEN_AND;
+
+    case PREC_OR:
+        return TOKEN_OR;
+
+    case PREC_NOT:
+        return TOKEN_NOT;
+
+    case PREC_UMINUS:
+        return TOKEN_MINUS;
+
+    default:
+        return TOKEN_EOF;
+    }
+}
+
+/**
  * @brief Nahradi usek od poslednej znacky jednym E podla pravidiel (i, !E, -E, (), E op E, (E))
  * @param stack pointer na zasobnik
- * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik
+ * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik,
+ * inak kod semantickej chyby
  */
 static int StackReduce(PrecStack *stack) {
     int mark = -1;
@@ -751,32 +889,44 @@ static int StackReduce(PrecStack *stack) {
 
     bool ok = false;
 
+    typeId newType = TYPE_UNDEFINED;
+    int result;
+
     StackItem *a = &stack->FieldOfItems[mark + 1];
     StackItem *b = &stack->FieldOfItems[mark + 2];
     StackItem *c = &stack->FieldOfItems[mark + 3];
 
     if (count == 1 && a->type == ITEM_TERM && a->symbol == PREC_I) {
         ok = true;
+        newType = a->valType;
     }
 
     if (count == 2 && a->type == ITEM_TERM && (a->symbol == PREC_NOT || a->symbol == PREC_UMINUS) &&
         b->type == ITEM_NONTERM) {
         ok = true;
+        result = Operator(b->valType, TYPE_UNDEFINED, PrecToToken(a->symbol), &newType);
+        if (result != 0)
+            return result;
     }
 
     if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_TERM &&
         b->symbol == PREC_RPAREN) {
         ok = true;
+        newType = TYPE_UNIT;
     }
 
     if (count == 3 && a->type == ITEM_NONTERM && b->type == ITEM_TERM && b->symbol >= PREC_MUL &&
         b->symbol <= PREC_OR && c->type == ITEM_NONTERM) {
         ok = true;
+        result = Operator(a->valType, c->valType, PrecToToken(b->symbol), &newType);
+        if (result != 0)
+            return result;
     }
 
     if (count == 3 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_NONTERM &&
         c->type == ITEM_TERM && c->symbol == PREC_RPAREN) {
         ok = true;
+        newType = b->valType;
     }
 
     if (ok != true) {
@@ -788,20 +938,29 @@ static int StackReduce(PrecStack *stack) {
     StackItem item;
     item.type = ITEM_NONTERM;
     item.symbol = PREC_I;
+    item.valType = newType;
     return StackPush(stack, item);
 }
 
 /**
  * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia (n.floor.toInt)
  * @param parser stav parsera s aktualnym tokenom
+ * @param type typ toho co je pred bodkou na vstupe a na vystupe typ po pristupe k clenom (VALMEM)
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int MemberAccess(Parser *parser) {
+static int MemberAccess(Parser *parser, typeId *type) {
     while (Check(parser, TOKEN_DOT)) {
         int result = Advance(parser);
         if (result != 0)
             return result;
+
+        const char *member = parser->current.value;
+
         result = Expect(parser, TOKEN_IDENT);
+        if (result != 0)
+            return result;
+
+        result = ValmemMember(*type, member, type);
         if (result != 0)
             return result;
     }
@@ -814,16 +973,24 @@ static int MemberAccess(Parser *parser) {
  * podla StackReduce, pri = spoji zatvorky. Volania funkcii riesi cez CallArgs, unarne minus
  * rozlisuje podla predchadzajuceho tokenu.
  * @param parser stav parsera s aktualnym tokenom
+ * @param outType adresa kam sa zapise typ vyrazu
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int Expr(Parser *parser) {
+static int Expr(Parser *parser, typeId *outType) {
+    typeId argTypes[64];
+    int argCount;
     bool prevOperand = false;
     bool isIdent;
+    TokenType tokType;
+    const char *tokName;
+    typeId opType;
+    bool isCall;
     PrecStack stack;
     stack.top = 0;
     StackItem item;
     item.type = ITEM_TERM;
     item.symbol = PREC_DOLLAR;
+    item.valType = TYPE_UNDEFINED;
     int result = StackPush(&stack, item);
     if (result != 0)
         return result;
@@ -842,6 +1009,7 @@ static int Expr(Parser *parser) {
 
         if (a == PREC_DOLLAR && b == PREC_DOLLAR) {
             if (stack.top == 2 && stack.FieldOfItems[1].type == ITEM_NONTERM) {
+                *outType = stack.FieldOfItems[1].valType;
                 return 0;
             } else {
                 return 2;
@@ -855,6 +1023,7 @@ static int Expr(Parser *parser) {
                 return result;
             item.type = ITEM_TERM;
             item.symbol = a;
+            item.valType = TYPE_UNDEFINED;
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
@@ -863,25 +1032,57 @@ static int Expr(Parser *parser) {
                 depth++;
             }
             isIdent = Check(parser, TOKEN_IDENT);
-
+            tokType = parser->current.type;
+            tokName = parser->current.value;
             result = Advance(parser);
             if (result != 0)
                 return result;
             if (isIdent && Check(parser, TOKEN_LPAREN)) {
-                result = CallArgs(parser);
+                isCall = true;
+                result = CallArgs(parser, argTypes, &argCount);
                 if (result != 0)
                     return result;
+            } else {
+                isCall = false;
             }
             if (a == PREC_I) {
-                result = MemberAccess(parser);
+                opType = TYPE_UNDEFINED;
+                if (tokType == TOKEN_INT_LITERAL) {
+                    opType = TYPE_INT;
+                } else if (tokType == TOKEN_DOUBLE_LITERAL) {
+                    opType = TYPE_DOUBLE;
+                } else if (tokType == TOKEN_STRING_LITERAL || tokType == TOKEN_INTERPOLATED) {
+                    opType = TYPE_STRING;
+                } else if (tokType == TOKEN_TRUE_LITERAL || tokType == TOKEN_FALSE_LITERAL) {
+                    opType = TYPE_BOOLEAN;
+                } else if (tokType == TOKEN_UNIT_LITERAL) {
+                    opType = TYPE_UNIT;
+                }
+
+                if (tokType == TOKEN_IDENT) {
+                    if (isCall) {
+                        opType = TYPE_UNDEFINED;
+                        result = Call(tokName, argCount, argTypes, &opType);
+                        if (result != 0)
+                            return result;
+                    } else {
+                        result = GetVarType(tokName, &opType);
+                        if (result != 0)
+                            return result;
+                    }
+                }
+                result = MemberAccess(parser, &opType);
                 if (result != 0)
                     return result;
+
+                stack.FieldOfItems[stack.top - 1].valType = opType;
             }
             break;
 
         case '=':
             item.type = ITEM_TERM;
             item.symbol = a;
+            item.valType = TYPE_UNDEFINED;
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
@@ -890,9 +1091,19 @@ static int Expr(Parser *parser) {
             result = Advance(parser);
             if (result != 0)
                 return result;
-            result = MemberAccess(parser);
-            if (result != 0)
-                return result;
+
+            if (stack.FieldOfItems[stack.top - 2].type == ITEM_NONTERM) {
+                typeId parenType = stack.FieldOfItems[stack.top - 2].valType;
+                result = MemberAccess(parser, &parenType);
+                if (result != 0)
+                    return result;
+                stack.FieldOfItems[stack.top - 2].valType = parenType;
+            } else {
+                typeId parenType = TYPE_UNIT;
+                result = MemberAccess(parser, &parenType);
+                if (result != 0)
+                    return result;
+            }
 
             break;
 
@@ -911,9 +1122,12 @@ static int Expr(Parser *parser) {
 /**
  * @brief Argumenty volania funkcie, kazdy cez Expr
  * @param parser stav parsera s aktualnym tokenom
+ * @param argTypes pole na zapisanie typov argumentov
+ * @param argCount adresa kam sa zapise pocet argumentov
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int CallArgs(Parser *parser) {
+static int CallArgs(Parser *parser, typeId *argTypes, int *argCount) {
+    *argCount = 0;
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
         return result;
@@ -925,9 +1139,18 @@ static int CallArgs(Parser *parser) {
     }
 
     while (true) {
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
         if (result != 0)
             return result;
+
+        if (*argCount == 64) {
+            return 99;
+        } else {
+            argTypes[*argCount] = exprType;
+            (*argCount)++;
+        }
+
         if (Check(parser, TOKEN_COMMA)) {
             result = Advance(parser);
             if (result != 0)
@@ -986,6 +1209,21 @@ static int StmtListRest(Parser *parser) {
 }
 
 /**
+ * @brief Uzatvara odlozeny prikaz, ak to bol vyraz posle jeho type do StatementValueType
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int CloseStatement(Parser *parser) {
+    if (parser->lastKind == STMT_EXPR) {
+        int result = StatementValueType(parser->lastComType);
+        if (result != 0)
+            return result;
+    }
+    parser->lastKind = STMT_NONE;
+    return 0;
+}
+
+/**
  * @brief Overi ci aktualny token operator, ktorym nesmie zacinat logicky riadok
  * @param parser stav parsera s aktualnym tokenom
  * @return true alebo false
@@ -1011,13 +1249,16 @@ static int LineType(Parser *parser) {
     if (StartsWithOperator(parser)) {
         return 2;
     }
+    int result = CloseStatement(parser);
+    if (result != 0)
+        return result;
     if (Check(parser, TOKEN_IF) || Check(parser, TOKEN_WHILE)) {
-        int result = BlockStmt(parser);
+        result = BlockStmt(parser);
         if (result != 0)
             return result;
         return result;
     } else {
-        int result = SimpleStmt(parser);
+        result = SimpleStmt(parser);
         if (result != 0)
             return result;
 
@@ -1037,6 +1278,10 @@ static int LineType(Parser *parser) {
 static int SimpleLineRest(Parser *parser) {
     if (Check(parser, TOKEN_SEMICOLON)) {
         int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = CloseStatement(parser);
         if (result != 0)
             return result;
 
@@ -1067,11 +1312,13 @@ static int BlockStmt(Parser *parser) {
         int result = If(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_IF;
         return result;
     } else {
         int result = Loop(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_UNIT;
         return result;
     }
 }
@@ -1086,7 +1333,12 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = Expr(parser);
+    typeId exprType;
+    result = Expr(parser, &exprType);
+    if (result != 0)
+        return result;
+
+    result = ConditionType(exprType);
     if (result != 0)
         return result;
 
@@ -1098,7 +1350,19 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
+    result = EnterBlock();
+    if (result != 0)
+        return result;
+
     result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = CloseStatement(parser);
+    if (result != 0)
+        return result;
+
+    result = LeaveBlock();
     if (result != 0)
         return result;
 
@@ -1119,7 +1383,12 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = Expr(parser);
+    typeId exprType;
+    result = Expr(parser, &exprType);
+    if (result != 0)
+        return result;
+
+    result = ConditionType(exprType);
     if (result != 0)
         return result;
 
@@ -1131,7 +1400,19 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
+    result = EnterBlock();
+    if (result != 0)
+        return result;
+
     result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = CloseStatement(parser);
+    if (result != 0)
+        return result;
+
+    result = LeaveBlock();
     if (result != 0)
         return result;
 
@@ -1170,7 +1451,19 @@ static int ElseRest(Parser *parser) {
         if (result != 0)
             return result;
 
+        result = EnterBlock();
+        if (result != 0)
+            return result;
+
         result = FunBody(parser);
+        if (result != 0)
+            return result;
+
+        result = CloseStatement(parser);
+        if (result != 0)
+            return result;
+
+        result = LeaveBlock();
         if (result != 0)
             return result;
 
@@ -1192,22 +1485,27 @@ static int ElseRest(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int SimpleStmt(Parser *parser) {
+    typeId valueType;
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
         int result = DefVar(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_UNIT;
 
         return result;
     } else if (Check(parser, TOKEN_RETURN)) {
         int result = RetStmt(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_RETURN;
 
         return result;
     } else {
+        const char *name = parser->current.value;
         bool startsIdent = Check(parser, TOKEN_IDENT);
         size_t before = parser->tokenCount;
-        int result = Expr(parser);
+        typeId exprType;
+        int result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
@@ -1215,10 +1513,21 @@ static int SimpleStmt(Parser *parser) {
             return 2; // A3
         }
 
-        result = AssignAfter(parser);
+        bool isAssign = Check(parser, TOKEN_ASSIGN);
+
+        result = AssignAfter(parser, &valueType);
         if (result != 0)
             return result;
 
+        if (isAssign) {
+            result = AssignValueToVar(name, valueType);
+            if (result != 0)
+                return result;
+            parser->lastKind = STMT_UNIT;
+        } else {
+            parser->lastKind = STMT_EXPR;
+            parser->lastComType = exprType;
+        }
         return result;
     }
 }
@@ -1230,15 +1539,31 @@ static int SimpleStmt(Parser *parser) {
  */
 static int DefVar(Parser *parser) {
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
+        typeId initType;
+        bool isConst;
+        if (Check(parser, TOKEN_VAL)) {
+            isConst = true;
+        } else {
+            isConst = false;
+        }
+
         int result = Advance(parser);
         if (result != 0)
             return result;
+
+        const char *name = parser->current.value;
+        bool hasType;
+        typeId type;
 
         result = Expect(parser, TOKEN_IDENT);
         if (result != 0)
             return result;
 
-        result = VarRest(parser);
+        result = VarRest(parser, &hasType, &type, &initType);
+        if (result != 0)
+            return result;
+
+        result = DeclareVar(name, hasType, type, isConst, initType);
         if (result != 0)
             return result;
 
@@ -1251,15 +1576,21 @@ static int DefVar(Parser *parser) {
 /**
  * @brief Volitelny typ a inicializacia premennej
  * @param parser stav parsera s aktualnym tokenom
+ * @param hasType adresa kam sa zapise ci ma premenna uvedeny typ
+ * @param type adresa kam sa zapise uvedeny typ
+ * @param initType adresa kam sa zapise typ inicializovaneho vyrazu
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int VarRest(Parser *parser) {
+static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType) {
     if (Check(parser, TOKEN_COLON)) {
+
+        *hasType = true;
+
         int result = Advance(parser);
         if (result != 0)
             return result;
 
-        result = DataType(parser);
+        result = DataType(parser, type);
         if (result != 0)
             return result;
 
@@ -1267,17 +1598,20 @@ static int VarRest(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = Expr(parser);
+        result = Expr(parser, initType);
         if (result != 0)
             return result;
 
         return result;
     } else {
+        *hasType = false;
+        *type = TYPE_UNDEFINED;
+
         int result = Expect(parser, TOKEN_ASSIGN);
         if (result != 0)
             return result;
 
-        result = Expr(parser);
+        result = Expr(parser, initType);
         if (result != 0)
             return result;
 
@@ -1296,9 +1630,14 @@ static int RetStmt(Parser *parser) {
         return result;
 
     if (Check(parser, TOKEN_EOL) || Check(parser, TOKEN_SEMICOLON)) {
-        return 0;
+        result = Return(false, TYPE_UNDEFINED);
+        return result;
     } else {
-        result = Expr(parser);
+        typeId exprType;
+        result = Expr(parser, &exprType);
+        if (result != 0)
+            return result;
+        result = Return(true, exprType);
         if (result != 0)
             return result;
 
@@ -1309,20 +1648,22 @@ static int RetStmt(Parser *parser) {
 /**
  * @brief Spracovava volitelne priradenie ("= vyraz" za vyrazom)
  * @param parser stav parsera s aktualnym tokenom
+ * @param valueType adresa kam sa zapise typ pravej strany, UNDEFINED ak nie je priradenie
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int AssignAfter(Parser *parser) {
+static int AssignAfter(Parser *parser, typeId *valueType) {
     if (Check(parser, TOKEN_ASSIGN)) {
         int result = Advance(parser);
         if (result != 0)
             return result;
 
-        result = Expr(parser);
+        result = Expr(parser, valueType);
         if (result != 0)
             return result;
 
         return result;
     } else {
+        *valueType = TYPE_UNDEFINED;
         return 0;
     }
 }
@@ -1330,12 +1671,17 @@ static int AssignAfter(Parser *parser) {
 /**
  * @brief Spracuje definiciu funkcie v tvare : def meno(parametre) [: typ] = telo
  * @param parser stav parsera s aktualnym tokenom
+ * @param isMain ci ide o funkciu main
  * @return vysledok spracovania pravidla definicie funkcie
  */
-static int Fun(Parser *parser) {
+static int Fun(Parser *parser, bool isMain) {
+    typeId retType;
+    bool hasRet;
     int result = Expect(parser, TOKEN_DEF);
     if (result != 0)
         return result;
+
+    const char *name = parser->current.value;
 
     result = Expect(parser, TOKEN_IDENT);
     if (result != 0)
@@ -1345,7 +1691,7 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = FunOptions(parser);
+    result = FunOptions(parser, &hasRet, &retType);
     if (result != 0)
         return result;
 
@@ -1353,7 +1699,47 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
+    result =
+        FuncBodyStart(name, parser->paramNames, parser->paramTypes, parser->paramCount, isMain);
+    if (result != 0)
+        return result;
+
+    parser->lastKind = STMT_NONE;
+
     result = FunHasBody(parser);
+    if (result != 0)
+        return result;
+
+    bool hasResult;
+    typeId resultType;
+    switch (parser->lastKind) {
+    case STMT_EXPR:
+        hasResult = true;
+        resultType = parser->lastComType;
+        break;
+
+    case STMT_UNIT:
+        hasResult = true;
+        resultType = TYPE_UNIT;
+        break;
+
+    case STMT_RETURN:
+        hasResult = false;
+        resultType = TYPE_UNDEFINED;
+        break;
+
+    case STMT_IF:
+        hasResult = false;
+        resultType = TYPE_UNDEFINED;
+        break;
+
+    default:
+        hasResult = true;
+        resultType = TYPE_UNIT;
+        break;
+    }
+
+    result = FuncBodyEnd(hasResult, resultType);
     if (result != 0)
         return result;
 
@@ -1374,7 +1760,7 @@ static int FunMain(Parser *parser) {
         if (result != 0)
             return result;
     }
-    result = Fun(parser);
+    result = Fun(parser, true);
     return result;
 }
 
@@ -1385,7 +1771,7 @@ static int FunMain(Parser *parser) {
  */
 static int FunList(Parser *parser) {
     if (Check(parser, TOKEN_DEF)) {
-        int result = Fun(parser);
+        int result = Fun(parser, false);
         if (result != 0)
             return result;
         result = FunList(parser);
@@ -1436,6 +1822,10 @@ static int Program(Parser *parser) {
     if (result != 0)
         return result;
 
+    result = CheckMain();
+    if (result != 0)
+        return result;
+
     result = Expect(parser, TOKEN_EOF);
     if (result != 0)
         return result;
@@ -1457,15 +1847,22 @@ int Parse(Lexer *lexer) {
     parser.capacity = 0;
     parser.position = 0;
     parser.fieldOfTokens = NULL;
-    int result = FillBuffer(&parser);
+    parser.lastComType = TYPE_UNDEFINED;
+    parser.lastKind = STMT_NONE;
+    int result = SemAnalysisInit();
+    if (result != 0)
+        return result;
+    result = FillBuffer(&parser);
     if (result != 0) {
         FreeBuffer(&parser);
+        SemAnalysisFree();
         return result;
     }
     parser.current = parser.fieldOfTokens[0];
     result = HeaderPass(&parser);
     if (result != 0) {
         FreeBuffer(&parser);
+        SemAnalysisFree();
         return result;
     }
     parser.position = 0;
@@ -1474,5 +1871,6 @@ int Parse(Lexer *lexer) {
     parser.prevLine = 0;
     result = Program(&parser);
     FreeBuffer(&parser);
+    SemAnalysisFree();
     return result;
 }
