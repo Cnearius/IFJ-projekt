@@ -82,6 +82,7 @@ static int MemberAccess(Parser *parser, typeId *type);
 static int CloseStatement(Parser *parser);
 static void BranchEnd(Parser *parser, bool *endsReturn, bool *endsUnit);
 static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasRet, typeId retType);
+static void ResetParserPosition(Parser *parser);
 
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
@@ -132,6 +133,17 @@ static void FreeBuffer(Parser *parser) {
     parser->fieldOfTokens = NULL;
     parser->count = 0;
     parser->capacity = 0;
+}
+
+/**
+ * @brief  vrati parser na zaciatok pola tokenov
+ * @param  parser stav parsera s aktualnym tokenom
+ */
+static void ResetParserPosition(Parser *parser) {
+    parser->position = 0;
+    parser->current = parser->fieldOfTokens[0];
+    parser->tokenCount = 0;
+    parser->prevLine = 0;
 }
 
 /**
@@ -1961,10 +1973,30 @@ int Parse(Lexer *lexer) {
         SemAnalysisFree();
         return result;
     }
-    parser.position = 0;
-    parser.current = parser.fieldOfTokens[0];
-    parser.tokenCount = 0;
-    parser.prevLine = 0;
+    int before;
+    parser.inferPass = true;
+    SemInferMode(true);
+    do {
+        before = DefinedFunctionCount();
+        ResetParserPosition(&parser);
+        result = Program(&parser);
+        if (result == 99) {
+            FreeBuffer(&parser);
+            SemAnalysisFree();
+            return 99;
+        }
+
+    } while (DefinedFunctionCount() > before);
+
+    result = ResetSemAnalysisForFinalAnalysis();
+    if (result != 0) {
+        FreeBuffer(&parser);
+        SemAnalysisFree();
+        return result;
+    }
+
+    parser.inferPass = false;
+    ResetParserPosition(&parser);
     result = Program(&parser);
     FreeBuffer(&parser);
     SemAnalysisFree();
