@@ -887,7 +887,7 @@ static int StackReduce(PrecStack *stack) {
     if (count == 2 && a->type == ITEM_TERM && (a->symbol == PREC_NOT || a->symbol == PREC_UMINUS) &&
         b->type == ITEM_NONTERM) {
         ok = true;
-        result = Operator(TYPE_UNDEFINED, b->valType, PrecToToken(a->symbol), &newType);
+        result = Operator(b->valType, TYPE_UNDEFINED, PrecToToken(a->symbol), &newType);
         if (result != 0)
             return result;
     }
