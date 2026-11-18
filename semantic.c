@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "lexer/token.h"
 #include "semantic.h"
 #include "symtable.h"
 #include "types.h"
@@ -28,9 +29,18 @@ typedef struct sTypeStore {
     int capacity;
 } typeStore;
 
+typedef struct {
+    char *name;
+    typeId declaredReturn;
+    bool hasExplicitReturn;
+    bool isMain;
+    bool sawReturn;
+} currentFunction;
+
 static typeStore types;
 static symTable *rootTable;
 static bool mainAlreadyDefined;
+static currentFunction currentFn;
 
 /**
  * @param types  ukazovatel na struct types
@@ -248,6 +258,8 @@ int SemAnalysisInit(void) {
 void SemAnalysisFree(void) {
     FreeAllTables(rootTable);
     rootTable = NULL;
+    free(currentFn.name);
+    currentFn.name = NULL;
     for (int i = 0; i < types.filledCount; i++) {
         free(types.functionTypes[i].idParams);
     }
@@ -444,10 +456,11 @@ int AssignValueToVar(const char *name, typeId valueType) {
  * @param funType id funkcneho typu v zozname types
  * @param argCount pocet argumentov volania
  * @param argTypes pole typov argumentov volania
- * @param outReturnType sem sa zapise navratovy typ signatury
- * @return 99 pri NULL outReturnType alebo ked id signatury neukazuje do zoznamu types
+ * @param outReturnType sem sa zapise navratovy typ
+ * @return 99 pri NULL outReturnType alebo ked id neukazuje do zoznamu types
  * @return 5 ked pocet alebo typ argumentov nesedi so signaturou
- * @return 6 ked ma niektory argument typ TYPE_UNDEFINED alebo ked je returnId signatury TYPE_UNDEFINED
+ * @return 6 ked ma niektory argument typ TYPE_UNDEFINED alebo ked je returnId
+ * TYPE_UNDEFINED
  * @return 0 pri uspechu
  * @brief overi argumenty volania voci signature a vrati jej navratovy typ
  */
@@ -474,14 +487,16 @@ static int GetReturnType(const typeId funType, int argCount, const typeId *argTy
 }
 
 /**
- * @param name meno funkcie alebo premennej s funkcnym typom
- * @param argCount pocet argumentov volania
- * @param argTypes pole typov argumentov volania
- * @param outType sem sa zapise navratovy typ volania
- * @return 99 pri NULL name alebo outType, zapornom argCount, NULL argTypes pri nenulovom pocte alebo neplatnom id signatury
+ * @param name meno funkcie alebo premennej
+ * @param argCount pocet argumentov
+ * @param argTypes pole typov argumentov
+ * @param outType sem sa zapise navratovy typ
+ * @return 99 pri NULL name alebo outType, zapornom argCount, NULL argTypes pri nenulovom pocte
+ * alebo neplatnom id signatury
  * @return 3 ked meno neexistuje ani ako premenna ani ako funkcia
  * @return 5 ked pocet alebo typ argumentov nesedi so signaturou
- * @return 6 ked najdena premenna nie je funkcia, ked ma argument typ TYPE_UNDEFINED alebo ked sa neda odvodit navratovy typ
+ * @return 6 ked najdena premenna nie je funkcia, ked ma argument typ TYPE_UNDEFINED alebo ked sa
+ * neda odvodit navratovy typ
  * @return 0 pri uspechu
  * @brief overi volanie funkcie alebo funkcie ulozenej v premennej a vrati jeho navratovy typ
  */
@@ -513,45 +528,398 @@ int Call(const char *name, int argCount, const typeId *argTypes, typeId *outType
     return 0;
 }
 
-int PutFuncParamAside(const char *name, typeId type) {
-    (void)name;
-    (void)type;
+/**
+ * @param name meno funkcie, ktorej telo sa zacina
+ * @param paramNames mena parametrov
+ * @param paramTypes typy parametrov
+ * @param paramCount pocet parametrov
+ * @param isMain ci ide o hlavnu funkciu
+ * @return 99 pri internej chybe
+ * @return 4 pri duplikate parametra
+ * @return 0 pri uspechu
+ * @brief vytvori scope tela funkcie, vlozi parametre ako konstanty a nastavi currentFn
+ */
+int FuncBodyStart(const char *name, const char **paramNames, const typeId *paramTypes,
+                  int paramCount, bool isMain) {
+    if (name == NULL || currentFn.name != NULL)
+        return 99;
+    if (paramCount < 0)
+        return 99;
+    if (paramCount > 0 && (paramNames == NULL || paramTypes == NULL))
+        return 99;
+
+    symbolData functionData;
+    if (!LookupFunction(rootTable, name, &functionData))
+        return 99;
+    if (functionData.isDefined)
+        return 99;
+    int index = functionData.type - TYPE_ID_BASE;
+    if (index < 0 || index >= types.filledCount)
+        return 99;
+    funcType *signature = &types.functionTypes[index];
+    if (paramCount != signature->paramCount)
+        return 99;
+
+    if (!PushScope(rootTable))
+        return 99;
+
+    symbolData paramData;
+    paramData.isConst = true;
+    paramData.isDefined = true;
+    paramData.isFunction = false;
+    paramData.paramCount = 0;
+    for (int i = 0; i < paramCount; i++) {
+        if (paramNames[i] == NULL || paramTypes[i] == TYPE_UNDEFINED ||
+            paramTypes[i] != signature->idParams[i]) {
+            PopScope(rootTable);
+            return 99;
+        }
+        paramData.type = paramTypes[i];
+        if (!InsertLocal(rootTable, paramNames[i], paramData)) {
+            PopScope(rootTable);
+            return 4;
+        }
+    }
+
+    size_t nameLength = strlen(name);
+    char *nameCopy = malloc(nameLength + 1);
+    if (nameCopy == NULL) {
+        PopScope(rootTable);
+        return 99;
+    }
+    memcpy(nameCopy, name, nameLength + 1);
+
+    currentFn.name = nameCopy;
+    currentFn.declaredReturn = signature->returnId;
+    currentFn.hasExplicitReturn = (signature->returnId != TYPE_UNDEFINED);
+    currentFn.isMain = isMain;
+    currentFn.sawReturn = false;
     return 0;
 }
 
-int FuncBodyStart(void) { return 0; }
+/**
+ * @param name meno funkcie v root tabulke
+ * @return 0 pri uspechu
+ * @return 99 pri internej chybe
+ * @brief oznaci existujucu funkciu za definovanu
+ */
+static int MarkFunctionDefined(const char *name) {
+    symbolData data;
+    if (!LookupFunction(rootTable, name, &data))
+        return 99;
+    data.isDefined = true;
+    if (!DeleteItem(rootTable, name))
+        return 99;
+    if (!InsertFunction(rootTable, name, data))
+        return 99;
+    return 0;
+}
 
-int FuncBodyEnd(void) { return 0; }
+/**
+ * @param name meno funkcie v root tabulke
+ * @param returnType odvodeny navratovy typ
+ * @return 0 pri uspechu
+ * @return 99 pri internej chybe
+ * @brief upravi navratovy typ funkcie
+ */
+static int UpdateFunctionReturnType(const char *name, typeId returnType) {
+    symbolData data;
+    if (!LookupFunction(rootTable, name, &data))
+        return 99;
+    int index = data.type - TYPE_ID_BASE;
+    if (index < 0 || index >= types.filledCount)
+        return 99;
+    funcType *signature = &types.functionTypes[index];
+    typeId newType;
+    if (FunctionType(signature->idParams, signature->paramCount, returnType, &newType) != 0)
+        return 99;
+    data.type = newType;
+    data.isDefined = true;
+    if (!DeleteItem(rootTable, name))
+        return 99;
+    if (!InsertFunction(rootTable, name, data))
+        return 99;
+    return 0;
+}
+/**
+ * @param hasResult ci telo funkcie vratilo hodnotu
+ * @param resultType typ vysledku tela, pouziva sa iba ked hasResult je true
+ * @return 99 pri internej chybe
+ * @return 6 pri chybajucom alebo nekompatibilnom vysledku
+ * @return 0 pri uspechu
+ * @brief uzavrie scope tela, skontroluje vysledok a oznaci funkciu za definovanu
+ */
+int FuncBodyEnd(bool hasResult, typeId resultType) {
+    if (currentFn.name == NULL)
+        return 99;
 
+    char *name = currentFn.name;
+    typeId declaredReturn = currentFn.declaredReturn;
+    bool hasExplicitReturn = currentFn.hasExplicitReturn;
+    bool isMain = currentFn.isMain;
+    bool sawReturn = currentFn.sawReturn;
+
+    currentFn.name = NULL;
+    if (!PopScope(rootTable)) {
+        free(name);
+        return 99;
+    }
+
+    int result = 0;
+    if (hasResult && resultType == TYPE_UNDEFINED) {
+        result = 6;
+    } else if (!hasExplicitReturn) {
+        if (sawReturn) {
+            result = 6;
+        } else if (hasResult) {
+            if (isMain && resultType != TYPE_UNIT)
+                result = 6;
+            else
+                result = UpdateFunctionReturnType(name, resultType);
+        } else {
+            result = UpdateFunctionReturnType(name, TYPE_UNIT);
+        }
+    } else if (declaredReturn == TYPE_UNIT) {
+        result = MarkFunctionDefined(name);
+    } else if (hasResult) {
+        if (CheckTypeCompatibility(resultType, declaredReturn))
+            result = MarkFunctionDefined(name);
+        else
+            result = 6;
+    } else if (sawReturn) {
+        result = MarkFunctionDefined(name);
+    } else {
+        result = 6;
+    }
+
+    free(name);
+    return result;
+}
+
+/**
+ * @param type kontrolovany typ
+ * @return true ak je typ int alebo double, inak false
+ * @brief zisti ci je typ numericky, pomocna funkcia pre overenie ze pri operaciach ktore beru len
+ * numericke hodnoty su hodnoty naozaj numericke
+ */
+static bool IsNumeric(typeId type) { return type == TYPE_INT || type == TYPE_DOUBLE; }
+
+/**
+ * @param left typ laveho operandu
+ * @param right typ praveho operandu
+ * @return Double ak je aspon jeden operand Double, inak Int
+ * @brief urci vysledny typ aritmetickej operacie, tiez pomocna funkcia
+ */
+static typeId NumericResult(typeId left, typeId right) {
+    if (left == TYPE_DOUBLE || right == TYPE_DOUBLE)
+        return TYPE_DOUBLE;
+    return TYPE_INT;
+}
+
+/**
+ * @param left typ laveho operanda
+ * @param right typ praveho operanda, TYPE_UNDEFINED pri unarnom operatore
+ * @param op token operatoru z lexeru
+ * @param outType typ vysledku
+ * @return 99 pri NULL outType, neznamom operatore alebo chybnom unarnom volani
+ * @return 6 pri operandoch, ktore operator nepodporuje
+ * @return 0 pri uspechu
+ * @brief urci typ vysledku operacie laveho a praveho operanda
+ */
 int Operator(typeId left, typeId right, int op, typeId *outType) {
-    (void)left;
-    (void)right;
-    (void)op;
+    if (outType == NULL)
+        return 99;
     *outType = TYPE_UNDEFINED;
-    return 0;
+    if (left == TYPE_UNDEFINED)
+        return 6;
+
+    switch (op) {
+    case TOKEN_NOT:
+        if (right != TYPE_UNDEFINED)
+            return 99;
+        if (left != TYPE_BOOLEAN)
+            return 6;
+        *outType = TYPE_BOOLEAN;
+        return 0;
+    case TOKEN_MINUS:
+    case TOKEN_PLUS:
+        if (right == TYPE_UNDEFINED) {
+            if (!IsNumeric(left))
+                return 6;
+            *outType = left;
+            return 0;
+        }
+        break;
+    case TOKEN_MUL:
+    case TOKEN_DIV:
+    case TOKEN_LT:
+    case TOKEN_LTE:
+    case TOKEN_GT:
+    case TOKEN_GTE:
+    case TOKEN_EQ:
+    case TOKEN_NEQ:
+    case TOKEN_AND:
+    case TOKEN_OR:
+        if (right == TYPE_UNDEFINED)
+            return 6;
+        break;
+    default:
+        return 99;
+    }
+
+    if (left == TYPE_ANY || right == TYPE_ANY)
+        return 6;
+
+    switch (op) {
+    case TOKEN_PLUS:
+        if (left == TYPE_STRING && right == TYPE_STRING) {
+            *outType = TYPE_STRING;
+            return 0;
+        }
+        if (IsNumeric(left) && IsNumeric(right)) {
+            *outType = NumericResult(left, right);
+            return 0;
+        }
+        return 6;
+    case TOKEN_MINUS:
+    case TOKEN_MUL:
+    case TOKEN_DIV:
+        if (!IsNumeric(left) || !IsNumeric(right))
+            return 6;
+        *outType = NumericResult(left, right);
+        return 0;
+    case TOKEN_LT:
+    case TOKEN_LTE:
+    case TOKEN_GT:
+    case TOKEN_GTE:
+        if ((IsNumeric(left) && IsNumeric(right)) ||
+            (left == TYPE_STRING && right == TYPE_STRING)) {
+            *outType = TYPE_BOOLEAN;
+            return 0;
+        }
+        return 6;
+    case TOKEN_EQ:
+    case TOKEN_NEQ:
+        if (left == right || (IsNumeric(left) && IsNumeric(right))) {
+            *outType = TYPE_BOOLEAN;
+            return 0;
+        }
+        return 6;
+    case TOKEN_AND:
+    case TOKEN_OR:
+        if (left != TYPE_BOOLEAN || right != TYPE_BOOLEAN)
+            return 6;
+        *outType = TYPE_BOOLEAN;
+        return 0;
+    default:
+        return 99;
+    }
 }
 
+/**
+ * @param objType typ pred bodkou
+ * @param member meno clena valmem
+ * @param outType tu sa zapisuje vysledok
+ * @return 99 ked je member NULL alebo outtype je null
+ * @return 6 pri neexistujucom valmem clene alebo nepodporovanom type pred bodkou
+ * @return 0 pri uspechu
+ * @brief overuje spravne pouzitie valmem rozsirenia, overi valmem clena a vrati jeho typ
+ */
 int ValmemMember(typeId objType, const char *member, typeId *outType) {
-    (void)objType;
-    (void)member;
+    if (outType == NULL)
+        return 99;
     *outType = TYPE_UNDEFINED;
-    return 0;
+    if (member == NULL)
+        return 99;
+    if (objType == TYPE_UNDEFINED || objType == TYPE_ANY)
+        return 6;
+
+    if (strcmp(member, "toString") == 0) {
+        if (objType < TYPE_INT || objType > TYPE_UNIT)
+            return 6;
+        *outType = TYPE_STRING;
+        return 0;
+    }
+    if (strcmp(member, "toInt") == 0) {
+        if (objType != TYPE_DOUBLE)
+            return 6;
+        *outType = TYPE_INT;
+        return 0;
+    }
+    if (strcmp(member, "floor") == 0) {
+        if (objType != TYPE_DOUBLE)
+            return 6;
+        *outType = TYPE_DOUBLE;
+        return 0;
+    }
+    if (strcmp(member, "length") == 0) {
+        if (objType != TYPE_STRING)
+            return 6;
+        *outType = TYPE_INT;
+        return 0;
+    }
+    return 6;
 }
 
-int ConditionType(typeId conditionType) {
-    (void)conditionType;
-    return 0;
-}
-
+/**
+ * @param hasValue ci ma return nejaku hodnotu
+ * @param valueType typ hodnoty returnu
+ * @return 99 pri internej chybe
+ * @return 10 ked return bez hodnoty nie je vo funkcii s TYPE_UNIT
+ * @return 6 ked je typ UNDEFINED, nema explicitne return a return nie je typovo kompatibilny s
+ * typom value
+ * @return 0 v pripade uspechu
+ * @brief Overenie zvysku pravidiel pre return, ktore este neboli pokryte v FuncBodyEnd()
+ */
 int Return(bool hasValue, typeId valueType) {
-    (void)hasValue;
-    (void)valueType;
+    if (currentFn.name == NULL)
+        return 99;
+    currentFn.sawReturn = true;
+    if (!hasValue) {
+        if (currentFn.hasExplicitReturn && currentFn.declaredReturn == TYPE_UNIT)
+            return 0;
+        return 10;
+    }
+    if (valueType == TYPE_UNDEFINED)
+        return 6;
+    if (!currentFn.hasExplicitReturn)
+        return 6;
+    if (currentFn.declaredReturn == TYPE_UNIT)
+        return 0;
+    if (!CheckTypeCompatibility(valueType, currentFn.declaredReturn))
+        return 6;
+
     return 0;
 }
 
+/**
+ * @param conditionType datovy typ podmienky
+ * @return 6 ked je typ iny ako BOOLEAN
+ * @return 0 ked je typ boolean
+ * @brief Funkcia na kontrolu, ci je podmienka naozaj typu boolean, ineho typu nesmie byt
+ */
+int ConditionType(typeId conditionType) {
+    if (conditionType == TYPE_BOOLEAN)
+        return 0;
+    else
+        return 6;
+}
+
+/**
+ * @param valueType typ vyrazu ktory je ako samostatny prikaz
+ * @return 99 ked je typ UNDEFINED
+ * @return 0 ked ma vyraz akykolvek typ okrem UNDEFINED
+ * @brief overuje ze vyraz v pozicii prikazu ma znamy typ
+ */
 int StatementValueType(typeId valueType) {
-    (void)valueType;
+    if (valueType == TYPE_UNDEFINED)
+        return 99;
     return 0;
 }
 
-int CheckMain(void) { return 0; }
+/**
+ * @return 3 ked este nebol zadefinovany main
+ * @return 0 ak uz bol zadefinovany main
+ * @brief overuje ci program obsahuje definiciu main
+ */
+int CheckMain(void) { return mainAlreadyDefined ? 0 : 3; }
