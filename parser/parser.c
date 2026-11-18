@@ -40,6 +40,8 @@ typedef struct {
     int paramCount;             ///< pocet parametrov aktualnej funkcie
     enum StmtKind lastKind;     ///< druh posledneho vyrazu
     typeId lastComType;         ///< typ posledneho vyrazu
+    bool lastIfAllReturn;       ///< ci vsetky vetvy posledneho if koncia returnom
+    bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
 } Parser;
 
 static int Advance(Parser *parser);
@@ -70,13 +72,14 @@ static int DefVar(Parser *parser);
 static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType);
 static int RetStmt(Parser *parser);
 static int AssignAfter(Parser *parser, typeId *valueType);
-static int If(Parser *parser);
+static int If(Parser *parser, bool *allReturn, bool *allUnit);
 static int Loop(Parser *parser);
-static int IfRest(Parser *parser);
-static int ElseRest(Parser *parser);
+static int IfRest(Parser *parser, bool *allReturn, bool *allUnit);
+static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit);
 static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
 static int MemberAccess(Parser *parser, typeId *type);
 static int CloseStatement(Parser *parser);
+static void BranchEnd(Parser *parser, bool *endsReturn, bool *endsUnit);
 
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
@@ -1308,11 +1311,15 @@ static int SimpleLineRest(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int BlockStmt(Parser *parser) {
+    bool alsoReturn;
+    bool alsoUnit;
     if (Check(parser, TOKEN_IF)) {
-        int result = If(parser);
+        int result = If(parser, &alsoReturn, &alsoUnit);
         if (result != 0)
             return result;
         parser->lastKind = STMT_IF;
+        parser->lastIfAllReturn = alsoReturn;
+        parser->lastIfAllUnit = alsoUnit;
         return result;
     } else {
         int result = Loop(parser);
@@ -1324,11 +1331,39 @@ static int BlockStmt(Parser *parser) {
 }
 
 /**
+ * @brief Zisti ako sa konci vetva if podla posledneho prikazu (return alebo unit)
+ * @param parser stav parsera s aktualnym tokenom
+ * @param endsReturn miesto kam sa zapise ci vetva konci returnom
+ * @param endsUnit miesto kam sa zapise ci vetva konci unit
+ */
+static void BranchEnd(Parser *parser, bool *endsReturn, bool *endsUnit) {
+    if (parser->lastKind == STMT_RETURN ||
+        (parser->lastKind == STMT_IF && parser->lastIfAllReturn)) {
+        *endsReturn = true;
+    } else {
+        *endsReturn = false;
+    }
+
+    if (parser->lastKind == STMT_UNIT || (parser->lastKind == STMT_IF && parser->lastIfAllUnit) ||
+        (parser->lastKind == STMT_EXPR && parser->lastComType == TYPE_UNIT)) {
+        *endsUnit = true;
+    } else {
+        *endsUnit = false;
+    }
+}
+
+/**
  * @brief Spracovava podmieneny prikaz (if podmienka then) a blok
  * @param parser stav parsera s aktualnym tokenom
+ * @param allReturn adresa kam sa zapise ci vsetky vetvy koncia return
+ * @param allUnit adresa kam sa zapise ci vsetky vetvy koncia unit
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int If(Parser *parser) {
+static int If(Parser *parser, bool *allReturn, bool *allUnit) {
+    bool thenUnit;
+    bool thenReturn;
+    bool restReturn;
+    bool restUnit;
     int result = Expect(parser, TOKEN_IF);
     if (result != 0)
         return result;
@@ -1358,6 +1393,8 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
+    BranchEnd(parser, &thenReturn, &thenUnit);
+
     result = CloseStatement(parser);
     if (result != 0)
         return result;
@@ -1366,9 +1403,12 @@ static int If(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = IfRest(parser);
+    result = IfRest(parser, &restReturn, &restUnit);
     if (result != 0)
         return result;
+
+    *allReturn = thenReturn && restReturn;
+    *allUnit = thenUnit && restUnit;
 
     return result;
 }
@@ -1422,20 +1462,24 @@ static int Loop(Parser *parser) {
 /**
  * @brief Spracovava volitelnu vetvu else
  * @param parser stav parsera s aktualnym tokenom
+ * @param allReturn adresa kam sa zapise ci vsetky vetvy koncia return
+ * @param allUnit adresa kam sa zapise ci vsetky vetvy koncia unit
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int IfRest(Parser *parser) {
+static int IfRest(Parser *parser, bool *allReturn, bool *allUnit) {
     if (Check(parser, TOKEN_ELSE)) {
         int result = Advance(parser);
         if (result != 0)
             return result;
 
-        result = ElseRest(parser);
+        result = ElseRest(parser, allReturn, allUnit);
         if (result != 0)
             return result;
 
         return result;
     } else {
+        *allReturn = false;
+        *allUnit = true;
         return 0;
     }
 }
@@ -1443,9 +1487,11 @@ static int IfRest(Parser *parser) {
 /**
  * @brief Spracovava obycajne else s blokom alebo else if
  * @param parser stav parsera s aktualnym tokenom
+ * @param allReturn adresa kam sa zapise ci vsetky vetvy koncia return
+ * @param allUnit adresa kam sa zapise ci vsetky vetvy koncia unit
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int ElseRest(Parser *parser) {
+static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit) {
     if (Check(parser, TOKEN_EOL)) {
         int result = Advance(parser);
         if (result != 0)
@@ -1459,6 +1505,8 @@ static int ElseRest(Parser *parser) {
         if (result != 0)
             return result;
 
+        BranchEnd(parser, allReturn, allUnit);
+
         result = CloseStatement(parser);
         if (result != 0)
             return result;
@@ -1469,7 +1517,7 @@ static int ElseRest(Parser *parser) {
 
         return result;
     } else if (Check(parser, TOKEN_IF)) {
-        int result = If(parser);
+        int result = If(parser, allReturn, allUnit);
         if (result != 0)
             return result;
 
@@ -1729,8 +1777,19 @@ static int Fun(Parser *parser, bool isMain) {
         break;
 
     case STMT_IF:
-        hasResult = false;
-        resultType = TYPE_UNDEFINED;
+        if (hasRet && retType == TYPE_UNIT) {
+            hasResult = true;
+            resultType = TYPE_UNIT;
+        } else if (parser->lastIfAllReturn) {
+            hasResult = false;
+            resultType = TYPE_UNDEFINED;
+        } else if (!hasRet && parser->lastIfAllUnit) {
+            hasResult = true;
+            resultType = TYPE_UNIT;
+        } else {
+            hasResult = true;
+            resultType = TYPE_UNDEFINED;
+        }
         break;
 
     default:
@@ -1849,6 +1908,8 @@ int Parse(Lexer *lexer) {
     parser.fieldOfTokens = NULL;
     parser.lastComType = TYPE_UNDEFINED;
     parser.lastKind = STMT_NONE;
+    parser.lastIfAllReturn = false;
+    parser.lastIfAllUnit = false;
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
