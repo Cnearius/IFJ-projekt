@@ -29,6 +29,7 @@ bool SearchItem(symTable *table, const char *key, symbolData *out);
 void FreeAllTables(symTable *table);
 bool PushScope(symTable *table);
 bool PopScope(symTable *table);
+bool IsRootScope(symTable *table);
 bool InsertLocal(symTable *table, const char *key, symbolData data);
 bool LookupVar(symTable *table, const char *key, symbolData *out);
 bool InsertFunction(symTable *table, const char *key, symbolData data);
