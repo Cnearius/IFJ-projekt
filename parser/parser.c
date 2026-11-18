@@ -7,6 +7,7 @@
 
 #include "parser.h"
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 /**
@@ -14,12 +15,19 @@
  * prace pametat
  */
 typedef struct {
-    Lexer *lexer;      ///< lexer z ktoreho parser berie tokeny
-    Token current;     ///< konkretny token ktory parser aktualne kontroluje
-    size_t prevLine;   ///< riadok predchadzajuceho tokenu
-    size_t tokenCount; ///< pocet zjedenych tokenov
+    Lexer *lexer;         ///< lexer z ktoreho parser berie tokeny
+    Token current;        ///< konkretny token ktory parser aktualne kontroluje
+    size_t prevLine;      ///< riadok predchadzajuceho tokenu
+    size_t tokenCount;    ///< pocet zjedenych tokenov
+    Token *fieldOfTokens; ///< vsetky tokeny zo vstupu za sebou
+    size_t count;         ///< kolko tokenov v poli naozaj je
+    size_t capacity;      ///< na kolko tokenov je pamet zatial alokovana
+    size_t position;      ///< index tokenu ktory je prave v current
 } Parser;
 
+static int Advance(Parser *parser);
+static bool Check(Parser *parser, TokenType type);
+static int Expect(Parser *parser, TokenType type);
 static int Program(Parser *parser);
 static int FunList(Parser *parser);
 static int Fun(Parser *parser);
@@ -53,15 +61,189 @@ static int CallArgs(Parser *parser);
 static int MemberAccess(Parser *parser);
 
 /**
- * @brief  Uvolni stary token a posunie novy na current
+ * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
  * @param  parser stav parsera s aktualnym tokenom
- * @return cislo od lexera
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FillBuffer(Parser *parser) {
+    size_t newCapacity = parser->capacity;
+    while (true) {
+        if (parser->count == newCapacity) {
+            if (newCapacity == 0) {
+                newCapacity = 64;
+            } else {
+                newCapacity = 2 * newCapacity;
+            }
+            Token *newField = realloc(parser->fieldOfTokens, newCapacity * sizeof(Token));
+            if (newField == NULL) {
+                return 99;
+            } else {
+                parser->fieldOfTokens = newField;
+                parser->capacity = newCapacity;
+            }
+        }
+        Token token;
+        token.value = NULL;
+        int result = LexerNextToken(parser->lexer, &token);
+        if (result != 0) {
+            FreeToken(&token);
+            return result;
+        }
+        parser->fieldOfTokens[parser->count] = token;
+        parser->count++;
+        if (token.type == TOKEN_EOF) {
+            return 0;
+        }
+    }
+}
+
+/**
+ * @brief  Uvolni samotne pole a vsetky tokeny v nom
+ * @param  parser stav parsera s aktualnym tokenom
+ */
+static void FreeBuffer(Parser *parser) {
+    for (size_t i = 0; i < parser->count; i++) {
+        FreeToken(&parser->fieldOfTokens[i]);
+    }
+    free(parser->fieldOfTokens);
+    parser->fieldOfTokens = NULL;
+    parser->count = 0;
+    parser->capacity = 0;
+}
+
+/**
+ * @brief  Preskoci telo funkcie, bud blok alebo jeden riadok
+ * @param  parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, 2 ak telo neskonci
+ */
+static int SkipBody(Parser *parser) {
+    int depth = 0;
+    if (Check(parser, TOKEN_EOL)) {
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+        result = Expect(parser, TOKEN_INDENT);
+        if (result != 0)
+            return result;
+        depth = 1;
+        while (depth > 0) {
+            if (Check(parser, TOKEN_INDENT)) {
+                depth++;
+            } else if (Check(parser, TOKEN_DEDENT)) {
+                depth--;
+            } else if (Check(parser, TOKEN_EOF)) {
+                return 2;
+            }
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+        }
+
+    } else {
+        while (!Check(parser, TOKEN_EOL)) {
+            if (Check(parser, TOKEN_EOF)) {
+                return 2;
+            } else {
+                int result = Advance(parser);
+                if (result != 0)
+                    return result;
+            }
+        }
+        int result = Advance(parser);
+        if (result != 0)
+            return result;
+    }
+    return 0;
+}
+
+/**
+ * @brief  Prvy prechod prejde hlavicky vsetkych funkcii a tela preskoci
+ * @param  parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak error kod
+ */
+static int HeaderPass(Parser *parser) {
+    int result = Expect(parser, TOKEN_IMPORT);
+    if (result != 0)
+        return result;
+
+    if (!Check(parser, TOKEN_IDENT)) {
+        return 2;
+    } else if (strcmp(parser->current.value, "ifj26") != 0) {
+        return 2;
+    }
+    result = Advance(parser);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_DOT);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_MUL);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_EOL);
+    if (result != 0)
+        return result;
+
+    while (true) {
+        if (Check(parser, TOKEN_MAIN)) {
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+            if (Check(parser, TOKEN_EOL)) {
+                result = Advance(parser);
+                if (result != 0)
+                    return result;
+            }
+        } else if (Check(parser, TOKEN_DEF)) {
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+
+            result = Expect(parser, TOKEN_IDENT);
+            if (result != 0)
+                return result;
+
+            result = Params(parser);
+            if (result != 0)
+                return result;
+
+            result = FunOptions(parser);
+            if (result != 0)
+                return result;
+
+            // TODO: FunctionHeader (az bude semantic.h)
+
+            result = Expect(parser, TOKEN_ASSIGN);
+            if (result != 0)
+                return result;
+
+            result = SkipBody(parser);
+            if (result != 0)
+                return result;
+        } else if (Check(parser, TOKEN_EOF)) {
+            return 0;
+        } else {
+            return 2;
+        }
+    }
+}
+
+/**
+ * @brief  Posuva sa na dalsi token v poli, zostane stat na EOF
+ * @param  parser stav parsera s aktualnym tokenom
+ * @return vzdy 0
  */
 static int Advance(Parser *parser) {
     parser->tokenCount++;
     parser->prevLine = parser->current.line;
-    FreeToken(&parser->current);
-    return LexerNextToken(parser->lexer, &parser->current);
+    if (parser->position + 1 < parser->count) {
+        parser->position++;
+    }
+    parser->current = parser->fieldOfTokens[parser->position];
+    return 0;
 }
 
 /**
@@ -76,7 +258,7 @@ static bool Check(Parser *parser, TokenType type) { return parser->current.type 
  * @brief Overi typ aktualneho tokenu, ak sedi posunie sa na dalsi, inak vrati chybu
  * @param parser stav parsera s aktualnym tokenom
  * @param type typ tokenu, ktory ocakavame
- * @return syntakticka chyba ak typ nesedi, inak vysledok Advance (0/1/99)
+ * @return syntakticka chyba (2) ak typ nesedi inak 0
  */
 static int Expect(Parser *parser, TokenType type) {
     if (!Check(parser, type)) {
@@ -1270,15 +1452,27 @@ int Parse(Lexer *lexer) {
     Parser parser;
     parser.tokenCount = 0;
     parser.lexer = lexer;
-    parser.current.value = NULL;
     parser.prevLine = 0;
-    parser.current.line = 0;
-    int result = Advance(&parser);
+    parser.count = 0;
+    parser.capacity = 0;
+    parser.position = 0;
+    parser.fieldOfTokens = NULL;
+    int result = FillBuffer(&parser);
     if (result != 0) {
-        FreeToken(&parser.current);
+        FreeBuffer(&parser);
         return result;
     }
+    parser.current = parser.fieldOfTokens[0];
+    result = HeaderPass(&parser);
+    if (result != 0) {
+        FreeBuffer(&parser);
+        return result;
+    }
+    parser.position = 0;
+    parser.current = parser.fieldOfTokens[0];
+    parser.tokenCount = 0;
+    parser.prevLine = 0;
     result = Program(&parser);
-    FreeToken(&parser.current);
+    FreeBuffer(&parser);
     return result;
 }
