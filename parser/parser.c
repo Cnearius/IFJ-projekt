@@ -47,7 +47,7 @@ static bool Check(Parser *parser, TokenType type);
 static int Expect(Parser *parser, TokenType type);
 static int Program(Parser *parser);
 static int FunList(Parser *parser);
-static int Fun(Parser *parser);
+static int Fun(Parser *parser, bool isMain);
 static int FunMain(Parser *parser);
 static int Params(Parser *parser);
 static int FunOptions(Parser *parser, bool *hasRet, typeId *retType);
@@ -582,6 +582,9 @@ static int FunHasBody(Parser *parser) {
         result = Expect(parser, TOKEN_EOL);
         if (result != 0)
             return result;
+
+        parser->lastKind = STMT_EXPR;
+        parser->lastComType = exprType;
 
         return result;
     }
@@ -1668,14 +1671,17 @@ static int AssignAfter(Parser *parser, typeId *valueType) {
 /**
  * @brief Spracuje definiciu funkcie v tvare : def meno(parametre) [: typ] = telo
  * @param parser stav parsera s aktualnym tokenom
+ * @param isMain ci ide o funkciu main
  * @return vysledok spracovania pravidla definicie funkcie
  */
-static int Fun(Parser *parser) {
+static int Fun(Parser *parser, bool isMain) {
     typeId retType;
     bool hasRet;
     int result = Expect(parser, TOKEN_DEF);
     if (result != 0)
         return result;
+
+    const char *name = parser->current.value;
 
     result = Expect(parser, TOKEN_IDENT);
     if (result != 0)
@@ -1693,13 +1699,8 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
-    for (int i = 0; i < parser->paramCount; i++) {
-        result = PutFuncParamAside(parser->paramNames[i], parser->paramTypes[i]);
-        if (result != 0)
-            return result;
-    }
-
-    result = FuncBodyStart();
+    result =
+        FuncBodyStart(name, parser->paramNames, parser->paramTypes, parser->paramCount, isMain);
     if (result != 0)
         return result;
 
@@ -1709,7 +1710,36 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
-    result = FuncBodyEnd();
+    bool hasResult;
+    typeId resultType;
+    switch (parser->lastKind) {
+    case STMT_EXPR:
+        hasResult = true;
+        resultType = parser->lastComType;
+        break;
+
+    case STMT_UNIT:
+        hasResult = true;
+        resultType = TYPE_UNIT;
+        break;
+
+    case STMT_RETURN:
+        hasResult = false;
+        resultType = TYPE_UNDEFINED;
+        break;
+
+    case STMT_IF:
+        hasResult = false;
+        resultType = TYPE_UNDEFINED;
+        break;
+
+    default:
+        hasResult = true;
+        resultType = TYPE_UNIT;
+        break;
+    }
+
+    result = FuncBodyEnd(hasResult, resultType);
     if (result != 0)
         return result;
 
@@ -1730,7 +1760,7 @@ static int FunMain(Parser *parser) {
         if (result != 0)
             return result;
     }
-    result = Fun(parser);
+    result = Fun(parser, true);
     return result;
 }
 
@@ -1741,7 +1771,7 @@ static int FunMain(Parser *parser) {
  */
 static int FunList(Parser *parser) {
     if (Check(parser, TOKEN_DEF)) {
-        int result = Fun(parser);
+        int result = Fun(parser, false);
         if (result != 0)
             return result;
         result = FunList(parser);
