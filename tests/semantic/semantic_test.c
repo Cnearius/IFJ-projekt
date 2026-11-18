@@ -1289,6 +1289,473 @@ static void test_fuzz_api(void) {
     endSection();
 }
 
+/* ================================================================== */
+/* 19. Dopredne volania a inferencne prechody                          */
+/*                                                                     */
+/* Modeluje presne to, co bude robit parser po napojeni:               */
+/*   1. hlavicky vsetkych funkcii (FunctionHeader)                     */
+/*   2. SemInferMode(true) a opakovane prechody, kym rastie            */
+/*      DefinedFunctionCount; telo, ktore vrati 98, sa zahodi           */
+/*   3. ResetSemAnalysisForFinalAnalysis()                             */
+/*   4. ostry prechod, v ktorom je 98 uz chyba 6                       */
+/*                                                                     */
+/* Sekcia vygenerovana AI (zadanie, sekcia 4).                         */
+/* Prompt: "napíš testy, ktoré modelujú viacprechodové inferenčné      */
+/* správanie parsera nad semantickým API vrátane abortu, resetu a      */
+/* ostrého prechodu"                                                   */
+/* ================================================================== */
+
+enum SimBodyKind {
+    BODY_INT_LITERAL,
+    BODY_DOUBLE_LITERAL,
+    BODY_BOOL_LITERAL,
+    BODY_CALL,
+    BODY_CALL_INT_ARG,
+    BODY_CALL_PLUS_INT,
+    BODY_CALL_PLUS_DOUBLE,
+    BODY_CALL_AS_COND,
+    BODY_CALL_ARG,
+    BODY_RETURN_INT,
+    BODY_BLOCK_CALL,
+    BODY_MAIN_PRINT
+};
+
+typedef struct {
+    bool hasResult;
+    typeId resultType;
+} SimResult;
+
+typedef struct {
+    const char *name;
+    const char *callee;
+    int kind;
+    const char **paramNames;
+    const typeId *paramTypes;
+    int paramCount;
+    bool isMain;
+} SimFunc;
+
+static int simPasses;
+
+static int SimRunBody(const SimFunc *func, SimResult *out) {
+    typeId t = TYPE_UNDEFINED;
+    typeId arg = TYPE_UNDEFINED;
+    typeId intArg = TYPE_INT;
+    int r;
+
+    out->hasResult = false;
+    out->resultType = TYPE_UNDEFINED;
+
+    switch (func->kind) {
+        case BODY_INT_LITERAL:
+            out->hasResult = true;
+            out->resultType = TYPE_INT;
+            return 0;
+        case BODY_DOUBLE_LITERAL:
+            out->hasResult = true;
+            out->resultType = TYPE_DOUBLE;
+            return 0;
+        case BODY_BOOL_LITERAL:
+            out->hasResult = true;
+            out->resultType = TYPE_BOOLEAN;
+            return 0;
+        case BODY_CALL:
+            r = Call(func->callee, 0, NULL, &t);
+            break;
+        case BODY_CALL_INT_ARG:
+            r = Call(func->callee, 1, &intArg, &t);
+            break;
+        case BODY_CALL_PLUS_INT:
+            r = Call(func->callee, 0, NULL, &t);
+            if (r != 0)
+                return r;
+            r = Operator(t, TYPE_INT, TOKEN_PLUS, &t);
+            break;
+        case BODY_CALL_PLUS_DOUBLE:
+            r = Call(func->callee, 0, NULL, &t);
+            if (r != 0)
+                return r;
+            r = Operator(t, TYPE_DOUBLE, TOKEN_PLUS, &t);
+            break;
+        case BODY_CALL_AS_COND:
+            r = Call(func->callee, 0, NULL, &t);
+            if (r != 0)
+                return r;
+            return ConditionType(t);
+        case BODY_CALL_ARG:
+            r = Call(func->callee, 0, NULL, &t);
+            if (r != 0)
+                return r;
+            arg = t;
+            r = Call("g", 1, &arg, &t);
+            break;
+        case BODY_RETURN_INT:
+            return Return(true, TYPE_INT);
+        case BODY_BLOCK_CALL:
+            r = EnterBlock();
+            if (r != 0)
+                return r;
+            r = DeclareVar("tmp", true, TYPE_INT, false, TYPE_INT);
+            if (r != 0)
+                return r;
+            r = Call(func->callee, 0, NULL, &t);
+            if (r != 0)
+                return r;
+            r = LeaveBlock();
+            break;
+        case BODY_MAIN_PRINT:
+            r = Call(func->callee, 0, NULL, &t);
+            if (r != 0)
+                return r;
+            arg = t;
+            r = Call("toStr", 1, &arg, &t);
+            if (r != 0)
+                return r;
+            arg = t;
+            r = Call("print", 1, &arg, &t);
+            break;
+        default:
+            return 99;
+    }
+    if (r != 0)
+        return r;
+    out->hasResult = true;
+    out->resultType = t;
+    return 0;
+}
+
+/* Simuluje presne poradie volani parsera: inferencne prechody, kym
+   DefinedFunctionCount rastie, potom reset a ostry prechod. */
+static int SimRun(const SimFunc *funcs, int count) {
+    int r;
+
+    SemInferMode(true);
+    simPasses = 0;
+    for (;;) {
+        int before = DefinedFunctionCount();
+        simPasses++;
+        for (int i = 0; i < count; i++) {
+            const SimFunc *f = &funcs[i];
+            if (FunctionHasType(f->name))
+                continue;
+            r = FuncBodyStart(f->name, f->paramNames, f->paramTypes, f->paramCount, f->isMain);
+            if (r != 0)
+                return r;
+            SimResult out;
+            r = SimRunBody(f, &out);
+            if (r != 0) {
+                r = AbortFuncBody();
+                if (r != 0)
+                    return r;
+                continue;
+            }
+            r = FuncBodyEnd(out.hasResult, out.resultType);
+            if (r != 0)
+                continue; /* inferencny prechod chybu tela nenahlasuje */
+        }
+        if (DefinedFunctionCount() == before)
+            break;
+    }
+
+    r = ResetSemAnalysisForFinalAnalysis();
+    if (r != 0)
+        return r;
+
+    for (int i = 0; i < count; i++) {
+        const SimFunc *f = &funcs[i];
+        r = FuncBodyStart(f->name, f->paramNames, f->paramTypes, f->paramCount, f->isMain);
+        if (r != 0)
+            return r;
+        SimResult out;
+        r = SimRunBody(f, &out);
+        if (r != 0) {
+            AbortFuncBody();
+            return r;
+        }
+        r = FuncBodyEnd(out.hasResult, out.resultType);
+        if (r != 0) {
+            AbortFuncBody();
+            return r;
+        }
+    }
+    return 0;
+}
+
+static void test_forward_inference(void) {
+    static const char *paramN[] = {"n"};
+    static const typeId paramInt[] = {TYPE_INT};
+
+    beginSection("19. dopredne volania a inferencne prechody");
+
+    /* S0: bez SemInferMode je neznamy navratovy typ hned chyba 6 */
+    fresh();
+    check("S0 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S0 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S0 start a", FuncBodyStart("a", NULL, NULL, 0, false), 0);
+    checkCall("S0 call b bez inferencie", "b", 0, NULL, 6, TYPE_UNDEFINED);
+    check("S0 abort", AbortFuncBody(), 0);
+
+    /* S1: a -> b, b = 5; tri prechody (posledny uz bez pokroku) */
+    fresh();
+    check("S1 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S1 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S1 count na zaciatku", DefinedFunctionCount(), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL, NULL, NULL, 0, false},
+            {"b", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S1 vysledok", SimRun(prog, 2), 0);
+        check("S1 pocet prechodov", simPasses, 3);
+    }
+    check("S1 a ma typ", FunctionHasType("a"), true);
+    checkCall("S1 typ a", "a", 0, NULL, 0, TYPE_INT);
+    check("S1 reset je idempotentny", ResetSemAnalysisForFinalAnalysis(), 0);
+    check("S1 count po druhom resete", DefinedFunctionCount(), 2);
+
+    /* S2: retaz a -> b -> c; styri prechody */
+    fresh();
+    check("S2 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S2 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S2 header c", FunctionHeader("c", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL, NULL, NULL, 0, false},
+            {"b", "c", BODY_CALL, NULL, NULL, 0, false},
+            {"c", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S2 vysledok", SimRun(prog, 3), 0);
+        check("S2 pocet prechodov", simPasses, 4);
+    }
+    checkCall("S2 typ a", "a", 0, NULL, 0, TYPE_INT);
+    checkCall("S2 typ b", "b", 0, NULL, 0, TYPE_INT);
+
+    /* S3: dopredny call v aritmetike, Int a Double */
+    fresh();
+    check("S3 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S3 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL_PLUS_INT, NULL, NULL, 0, false},
+            {"b", NULL, BODY_DOUBLE_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S3 vysledok", SimRun(prog, 2), 0);
+    }
+    checkCall("S3 a zvladne Int + Double", "a", 0, NULL, 0, TYPE_DOUBLE);
+
+    /* S4: dopredny call ako podmienka; platny aj neplatny pripad */
+    fresh();
+    check("S4 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S4 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL_AS_COND, NULL, NULL, 0, false},
+            {"b", NULL, BODY_BOOL_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S4 podmienka z dopredneho callu", SimRun(prog, 2), 0);
+    }
+    checkCall("S4 a je Unit", "a", 0, NULL, 0, TYPE_UNIT);
+
+    fresh();
+    check("S4b header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S4b header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL_AS_COND, NULL, NULL, 0, false},
+            {"b", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S4b Int v podmienke = 6", SimRun(prog, 2), 6);
+    }
+
+    /* S5: dopredny call ako argument; g(Int) je explicitna */
+    fresh();
+    check("S5 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S5 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S5 header g", FunctionHeader("g", true, TYPE_INT, paramInt, 1, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL_ARG, NULL, NULL, 0, false},
+            {"b", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+            {"g", NULL, BODY_INT_LITERAL, paramN, paramInt, 1, false},
+        };
+        check("S5 vysledok", SimRun(prog, 3), 0);
+    }
+    checkCall("S5 a ma Int", "a", 0, NULL, 0, TYPE_INT);
+
+    /* S6: rekurzia bez typu nikdy neziska typ -> 6 */
+    fresh();
+    check("S6 header f", FunctionHeader("f", false, TYPE_UNDEFINED, paramInt, 1, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"f", "f", BODY_CALL_INT_ARG, paramN, paramInt, 1, false},
+        };
+        check("S6 rekurzia = 6", SimRun(prog, 1), 6);
+        check("S6 iba jeden prechod", simPasses, 1);
+    }
+    check("S6 f nema typ", FunctionHasType("f"), false);
+
+    /* S7: vzajomna rekurzia bez typov -> 6 */
+    fresh();
+    check("S7 header x", FunctionHeader("x", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S7 header y", FunctionHeader("y", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"x", "y", BODY_CALL, NULL, NULL, 0, false},
+            {"y", "x", BODY_CALL, NULL, NULL, 0, false},
+        };
+        check("S7 vzajomna rekurzia = 6", SimRun(prog, 2), 6);
+        check("S7 iba jeden prechod", simPasses, 1);
+    }
+
+    /* S8: rekurzia s explicitnym typom je v poriadku */
+    fresh();
+    check("S8 header f", FunctionHeader("f", true, TYPE_INT, paramInt, 1, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"f", "f", BODY_CALL_INT_ARG, paramN, paramInt, 1, false},
+        };
+        check("S8 explicitna rekurzia = 0", SimRun(prog, 1), 0);
+    }
+    checkCall("S8 typ f", "f", 1, paramInt, 0, TYPE_INT);
+
+    /* S9: explicitna funkcia vola neskor definovanu inferovanu */
+    fresh();
+    check("S9 header a", FunctionHeader("a", true, TYPE_INT, NULL, 0, false), 0);
+    check("S9 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S9 a ma typ uz z hlavicky", FunctionHasType("a"), true);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL, NULL, NULL, 0, false},
+            {"b", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S9 vysledok", SimRun(prog, 2), 0);
+        check("S9 dva prechody", simPasses, 2);
+    }
+
+    /* S10: dopredny call na neexistujucu funkciu */
+    fresh();
+    check("S10 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "nope", BODY_CALL, NULL, NULL, 0, false},
+        };
+        check("S10 neexistujuca funkcia = 3", SimRun(prog, 1), 3);
+    }
+
+    /* S11: dopredny call so zlym poctom argumentov */
+    fresh();
+    check("S11 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S11 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL_INT_ARG, NULL, NULL, 0, false},
+            {"b", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S11 zly pocet argumentov = 5", SimRun(prog, 2), 5);
+    }
+
+    /* S12: return v inferovanej funkcii nema co overovat -> 6 */
+    fresh();
+    check("S12 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", NULL, BODY_RETURN_INT, NULL, NULL, 0, false},
+        };
+        check("S12 return v inferovanej = 6", SimRun(prog, 1), 6);
+    }
+
+    /* S13: return v explicitnej funkcii je v poriadku */
+    fresh();
+    check("S13 header a", FunctionHeader("a", true, TYPE_INT, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", NULL, BODY_RETURN_INT, NULL, NULL, 0, false},
+        };
+        check("S13 return v explicitnej = 0", SimRun(prog, 1), 0);
+    }
+
+    /* S14: main tlaci vysledok neskor definovanej funkcie */
+    fresh();
+    check("S14 header main", FunctionHeader("main", true, TYPE_UNIT, NULL, 0, true), 0);
+    check("S14 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"main", "a", BODY_MAIN_PRINT, NULL, NULL, 0, true},
+            {"a", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S14 main s doprednym callom", SimRun(prog, 2), 0);
+    }
+    check("S14 CheckMain", CheckMain(), 0);
+
+    /* S15: abort musi zavriet aj vnoreny blok, nie len telo */
+    fresh();
+    check("S15 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S15 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_BLOCK_CALL, NULL, NULL, 0, false},
+            {"b", NULL, BODY_INT_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S15 blok v inferovanom tele", SimRun(prog, 2), 0);
+        check("S15 tri prechody", simPasses, 3);
+    }
+    checkCall("S15 typ a", "a", 0, NULL, 0, TYPE_INT);
+
+    /* S16: abort s dvoma otvorenymi blokmi a premennou vnutri */
+    fresh();
+    check("S16 header g", FunctionHeader("g", true, TYPE_UNIT, NULL, 0, false), 0);
+    SemInferMode(true);
+    check("S16 start g", FuncBodyStart("g", NULL, NULL, 0, false), 0);
+    check("S16 blok 1", EnterBlock(), 0);
+    check("S16 blok 2", EnterBlock(), 0);
+    check("S16 premenna tmp", DeclareVar("tmp", true, TYPE_INT, false, TYPE_INT), 0);
+    check("S16 abort", AbortFuncBody(), 0);
+    checkVar("S16 tmp po aborte neexistuje", "tmp", 3, TYPE_UNDEFINED);
+    check("S16 start po aborte", FuncBodyStart("g", NULL, NULL, 0, false), 0);
+    check("S16 end po druhom starte", FuncBodyEnd(false, TYPE_UNDEFINED), 0);
+    SemInferMode(false);
+
+    /* S17: abort bez otvoreneho tela je bezpecny */
+    fresh();
+    check("S17 abort bez tela", AbortFuncBody(), 0);
+
+    /* S18: to iste telo sa v inferenci smie spustit znova, v ostrom nie */
+    fresh();
+    check("S18 header g", FunctionHeader("g", true, TYPE_UNIT, NULL, 0, false), 0);
+    SemInferMode(true);
+    check("S18 start 1", FuncBodyStart("g", NULL, NULL, 0, false), 0);
+    check("S18 end 1", FuncBodyEnd(false, TYPE_UNDEFINED), 0);
+    check("S18 start 2 v inferenci", FuncBodyStart("g", NULL, NULL, 0, false), 0);
+    check("S18 abort", AbortFuncBody(), 0);
+    SemInferMode(false);
+    check("S18 start v ostrom bez resetu = 99", FuncBodyStart("g", NULL, NULL, 0, false), 99);
+    check("S18 reset", ResetSemAnalysisForFinalAnalysis(), 0);
+    check("S18 start po resete", FuncBodyStart("g", NULL, NULL, 0, false), 0);
+    check("S18 end po resete", FuncBodyEnd(false, TYPE_UNDEFINED), 0);
+
+    /* S19: FunctionHasType pre neznamu funkciu */
+    fresh();
+    check("S19 neznama nema typ", FunctionHasType("nic"), false);
+    check("S19 header h", FunctionHeader("h", true, TYPE_INT, NULL, 0, false), 0);
+    check("S19 h ma typ", FunctionHasType("h"), true);
+
+    /* S20: Double sa pri inferenci neskomoli na Int */
+    fresh();
+    check("S20 header a", FunctionHeader("a", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    check("S20 header b", FunctionHeader("b", false, TYPE_UNDEFINED, NULL, 0, false), 0);
+    {
+        const SimFunc prog[] = {
+            {"a", "b", BODY_CALL_PLUS_DOUBLE, NULL, NULL, 0, false},
+            {"b", NULL, BODY_DOUBLE_LITERAL, NULL, NULL, 0, false},
+        };
+        check("S20 Double + Double", SimRun(prog, 2), 0);
+    }
+    checkCall("S20 typ a", "a", 0, NULL, 0, TYPE_DOUBLE);
+
+    SemAnalysisFree();
+    endSection();
+}
+
 int main(void) {
     test_lifecycle_and_builtins();
     test_function_type();
@@ -1308,6 +1775,7 @@ int main(void) {
     test_integration();
     test_api_edges_and_stress();
     test_fuzz_api();
+    test_forward_inference();
 
     SemAnalysisFree();
 

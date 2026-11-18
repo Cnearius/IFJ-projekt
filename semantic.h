@@ -11,6 +11,8 @@
 #include "types.h"
 #include <stdbool.h>
 
+#define NOT_YET_KNOWN_RETURN_TYPE 98
+
 int SemAnalysisInit(void);
 void SemAnalysisFree(void);
 int FunctionType(const typeId *params, int paramCount, typeId returnType, typeId *outId);
@@ -37,4 +39,9 @@ int ConditionType(typeId conditionType);     // overenie lebo podmienka musi mat
 int Return(bool hasValue, typeId valueType); // pravidla pre return
 int StatementValueType(typeId valueType);
 int CheckMain(void); // overi ze program obsahuje definiciu main
+void SemInferMode(bool enabled);
+int AbortFuncBody(void);
+bool FunctionHasType(const char *name);
+int DefinedFunctionCount(void);
+int ResetSemAnalysisForFinalAnalysis(void);
 #endif
