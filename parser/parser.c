@@ -12,6 +12,17 @@
 #include <string.h>
 
 /**
+ * @brief enum na druh posledneho prikazu
+ */
+enum StmtKind {
+    STMT_NONE,
+    STMT_EXPR,
+    STMT_UNIT,
+    STMT_RETURN,
+    STMT_IF,
+};
+
+/**
  * @brief struktura ktora si pameta aktualny stav parsera takze vsetko co si parser potrebuje pocas
  * prace pametat
  */
@@ -27,6 +38,8 @@ typedef struct {
     typeId paramTypes[64];      ///< pole na typy parametrov aktualnej funkcie
     const char *paramNames[64]; ///< pole na mena parametrov aktualnej funkcie
     int paramCount;             ///< pocet parametrov aktualnej funkcie
+    enum StmtKind lastKind;     ///< druh posledneho vyrazu
+    typeId lastComType;         ///< typ posledneho vyrazu
 } Parser;
 
 static int Advance(Parser *parser);
@@ -63,6 +76,7 @@ static int IfRest(Parser *parser);
 static int ElseRest(Parser *parser);
 static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
 static int MemberAccess(Parser *parser, typeId *type);
+static int CloseStatement(Parser *parser);
 
 /**
  * @brief  Nacita vsetky tokeny zo vstupu do pola, skonci po TOKEN_EOF
@@ -1192,6 +1206,21 @@ static int StmtListRest(Parser *parser) {
 }
 
 /**
+ * @brief Uzatvara odlozeny prikaz, ak to bol vyraz posle jeho type do StatementValueType
+ * @param parser stav parsera s aktualnym tokenom
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int CloseStatement(Parser *parser) {
+    if (parser->lastKind == STMT_EXPR) {
+        int result = StatementValueType(parser->lastComType);
+        if (result != 0)
+            return result;
+    }
+    parser->lastKind = STMT_NONE;
+    return 0;
+}
+
+/**
  * @brief Overi ci aktualny token operator, ktorym nesmie zacinat logicky riadok
  * @param parser stav parsera s aktualnym tokenom
  * @return true alebo false
@@ -1217,13 +1246,16 @@ static int LineType(Parser *parser) {
     if (StartsWithOperator(parser)) {
         return 2;
     }
+    int result = CloseStatement(parser);
+    if (result != 0)
+        return result;
     if (Check(parser, TOKEN_IF) || Check(parser, TOKEN_WHILE)) {
-        int result = BlockStmt(parser);
+        result = BlockStmt(parser);
         if (result != 0)
             return result;
         return result;
     } else {
-        int result = SimpleStmt(parser);
+        result = SimpleStmt(parser);
         if (result != 0)
             return result;
 
@@ -1243,6 +1275,10 @@ static int LineType(Parser *parser) {
 static int SimpleLineRest(Parser *parser) {
     if (Check(parser, TOKEN_SEMICOLON)) {
         int result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        result = CloseStatement(parser);
         if (result != 0)
             return result;
 
@@ -1273,11 +1309,13 @@ static int BlockStmt(Parser *parser) {
         int result = If(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_IF;
         return result;
     } else {
         int result = Loop(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_UNIT;
         return result;
     }
 }
@@ -1314,6 +1352,10 @@ static int If(Parser *parser) {
         return result;
 
     result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = CloseStatement(parser);
     if (result != 0)
         return result;
 
@@ -1360,6 +1402,10 @@ static int Loop(Parser *parser) {
         return result;
 
     result = FunBody(parser);
+    if (result != 0)
+        return result;
+
+    result = CloseStatement(parser);
     if (result != 0)
         return result;
 
@@ -1410,6 +1456,10 @@ static int ElseRest(Parser *parser) {
         if (result != 0)
             return result;
 
+        result = CloseStatement(parser);
+        if (result != 0)
+            return result;
+
         result = LeaveBlock();
         if (result != 0)
             return result;
@@ -1437,12 +1487,14 @@ static int SimpleStmt(Parser *parser) {
         int result = DefVar(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_UNIT;
 
         return result;
     } else if (Check(parser, TOKEN_RETURN)) {
         int result = RetStmt(parser);
         if (result != 0)
             return result;
+        parser->lastKind = STMT_RETURN;
 
         return result;
     } else {
@@ -1468,8 +1520,11 @@ static int SimpleStmt(Parser *parser) {
             result = AssignValueToVar(name, valueType);
             if (result != 0)
                 return result;
+            parser->lastKind = STMT_UNIT;
+        } else {
+            parser->lastKind = STMT_EXPR;
+            parser->lastComType = exprType;
         }
-
         return result;
     }
 }
@@ -1648,6 +1703,8 @@ static int Fun(Parser *parser) {
     if (result != 0)
         return result;
 
+    parser->lastKind = STMT_NONE;
+
     result = FunHasBody(parser);
     if (result != 0)
         return result;
@@ -1760,6 +1817,8 @@ int Parse(Lexer *lexer) {
     parser.capacity = 0;
     parser.position = 0;
     parser.fieldOfTokens = NULL;
+    parser.lastComType = TYPE_UNDEFINED;
+    parser.lastKind = STMT_NONE;
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
