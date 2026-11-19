@@ -940,7 +940,7 @@ static char PrecToGenOp(enum PrecSymbol s) {
 
 /**
  * @brief Nahradi usek od poslednej znacky jednym E podla pravidiel (i, !E, -E, (), E op E, (E))
-* @param parser stav parsera s aktualnym tokenom
+ * @param parser stav parsera s aktualnym tokenom
  * @param stack pointer na zasobnik
  * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik,
  * inak kod semantickej chyby
@@ -1508,6 +1508,12 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenIfStart(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     result = Expect(parser, TOKEN_THEN);
     if (result != 0)
         return result;
@@ -1519,6 +1525,12 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit) {
     result = EnterBlock();
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenScopeEnter(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     result = FunBody(parser);
     if (result != 0)
@@ -1534,9 +1546,25 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenScopeExit(parser->cg);
+        if (result != 0)
+            return result;
+
+        result = GenIfElse(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     result = IfRest(parser, &restReturn, &restUnit);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenIfEnd(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     *allReturn = thenReturn && restReturn;
     *allUnit = thenUnit && restUnit;
@@ -1554,6 +1582,12 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenWhileStart(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     typeId exprType;
     result = Expr(parser, &exprType);
     if (result != 0)
@@ -1562,6 +1596,12 @@ static int Loop(Parser *parser) {
     result = ConditionType(exprType);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenWhileCond(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     result = Expect(parser, TOKEN_DO);
     if (result != 0)
@@ -1575,6 +1615,12 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenScopeEnter(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     result = FunBody(parser);
     if (result != 0)
         return result;
@@ -1586,6 +1632,16 @@ static int Loop(Parser *parser) {
     result = LeaveBlock();
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenScopeExit(parser->cg);
+        if (result != 0)
+            return result;
+        
+        result = GenWhileEnd(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     return result;
 }
@@ -1632,6 +1688,12 @@ static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit) {
         if (result != 0)
             return result;
 
+        if (parser->genCode) {
+            result = GenScopeEnter(parser->cg);
+            if (result != 0)
+                return result;
+        }
+
         result = FunBody(parser);
         if (result != 0)
             return result;
@@ -1645,6 +1707,12 @@ static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit) {
         result = LeaveBlock();
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            result = GenScopeExit(parser->cg);
+            if (result != 0)
+                return result;
+        }
 
         return result;
     } else if (Check(parser, TOKEN_IF)) {
