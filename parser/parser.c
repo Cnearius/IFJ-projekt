@@ -1793,45 +1793,39 @@ static int SimpleStmt(Parser *parser) {
         parser->lastKind = STMT_RETURN;
 
         return result;
-    } else {
+    } else if (Check(parser, TOKEN_IDENT) &&
+               parser->fieldOfTokens[parser->position + 1].type == TOKEN_ASSIGN) {
         const char *name = parser->current.value;
-        bool startsIdent = Check(parser, TOKEN_IDENT);
-        size_t before = parser->tokenCount;
-        typeId exprType;
-        int result = Expr(parser, &exprType);
+        int result = Advance(parser);
         if (result != 0)
             return result;
-
-        if (Check(parser, TOKEN_ASSIGN) && !(startsIdent && parser->tokenCount - before == 1)) {
-            return 2; // A3
-        }
-
-        bool isAssign = Check(parser, TOKEN_ASSIGN);
 
         result = AssignAfter(parser, &valueType);
         if (result != 0)
             return result;
 
-        if (isAssign) {
-            result = AssignValueToVar(name, valueType);
+        result = AssignValueToVar(name, valueType);
+        if (result != 0)
+            return result;
+        if (parser->genCode) {
+            result = GenPopToVar(parser->cg, name);
             if (result != 0)
                 return result;
-
-            if (parser->genCode) {
-                result = GenPopToVar(parser->cg, name);
-                if (result != 0)
-                    return result;
-
-                result = GenPopDiscard(parser->cg);
-                if (result != 0)
-                    return result;
-            }
-
-            parser->lastKind = STMT_UNIT;
-        } else {
-            parser->lastKind = STMT_EXPR;
-            parser->lastComType = exprType;
         }
+        parser->lastKind = STMT_UNIT;
+        return result;
+    } else {
+        typeId exprType;
+        int result = Expr(parser, &exprType);
+        if (result != 0)
+            return result;
+
+        if (Check(parser, TOKEN_ASSIGN)) {
+            return 2; // A3
+        }
+
+        parser->lastKind = STMT_EXPR;
+        parser->lastComType = exprType;
         return result;
     }
 }
