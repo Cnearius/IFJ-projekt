@@ -1182,6 +1182,8 @@ static int Expr(Parser *parser, typeId *outType) {
                         result = GenPushInt(parser->cg, strtoll(tokName, NULL, 10));
                     } else if (tokType == TOKEN_DOUBLE_LITERAL) {
                         result = GenPushFloat(parser->cg, strtod(tokName, NULL));
+                    } else if (tokType == TOKEN_STRING_LITERAL) {
+                        result = GenPushString(parser->cg, tokName);
                     } else if (tokType == TOKEN_TRUE_LITERAL) {
                         result = GenPushBool(parser->cg, true);
                     } else if (tokType == TOKEN_FALSE_LITERAL) {
@@ -1192,6 +1194,30 @@ static int Expr(Parser *parser, typeId *outType) {
                         result = GenPushVar(parser->cg, tokName);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "print") == 0) {
                         result = GenBuiltinPrint(parser->cg, argTypes[0] == TYPE_UNIT, true);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readInt") == 0) {
+                        result = GenBuiltinReadInt(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readDouble") == 0) {
+                        result = GenBuiltinReadDouble(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readLine") == 0) {
+                        result = GenBuiltinReadString(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toInt") == 0) {
+                        result = GenBuiltinToInt(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "strLength") == 0) {
+                        result = GenBuiltinStrLength(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "chr") == 0) {
+                        result = GenBuiltinChr(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toStr") == 0) {
+                        char kind = 'i';
+                        if (argTypes[0] == TYPE_DOUBLE) {
+                            kind = 'f';
+                        } else if (argTypes[0] == TYPE_STRING) {
+                            kind = 's';
+                        }
+                        result = GenBuiltinToStr(parser->cg, kind);
                     } else if (tokType == TOKEN_IDENT && isCall) {
                         result = GenCall(parser->cg, tokName);
                     }
@@ -1637,7 +1663,7 @@ static int Loop(Parser *parser) {
         result = GenScopeExit(parser->cg);
         if (result != 0)
             return result;
-        
+
         result = GenWhileEnd(parser->cg);
         if (result != 0)
             return result;
