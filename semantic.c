@@ -52,6 +52,7 @@ static int blockDepth;
 static functionInfo *functionList;
 static int functionCount;
 static int functionCapacity;
+static bool pendingInitIsFunctionRef = false;
 
 /**
  * @param types  ukazovatel na struct types
@@ -462,6 +463,22 @@ int LeaveBlock(void) {
 }
 
 /**
+ * @param initName meno inicializatora, ak bol jediny identifikator
+ * @param isBareIdent true ak inicializator bol presne jeden identifikator
+ * @brief zapamata si kontext inicializatora
+ */
+void SetVarInitInfo(const char *initName, bool isBareIdent) {
+    pendingInitIsFunctionRef = false;
+    if (initName == NULL || !isBareIdent || rootTable == NULL)
+        return;
+    symbolData data;
+    if (LookupVar(rootTable, initName, &data))
+        return;
+    if (LookupFunction(rootTable, initName, &data))
+        pendingInitIsFunctionRef = true;
+}
+
+/**
  * @param name nazov premennej
  * @param hasType ci uzivatel zadal typ alebo nie
  * @param type typ ktory zadefinoval uzivatel pre premennu
@@ -477,10 +494,14 @@ int LeaveBlock(void) {
  * scope tabulky.
  */
 int DeclareVar(const char *name, bool hasType, typeId type, bool isConst, typeId initType) {
+    bool initIsFunctionRef = pendingInitIsFunctionRef;
+    pendingInitIsFunctionRef = false;
     if (name == NULL)
         return 99;
     if (IsRootScope(rootTable))
         return 99;
+    if (!hasType && initIsFunctionRef)
+        return 6;
     if (hasType) {
         if (!CheckTypeCompatibility(initType, type))
             return 6;
@@ -595,8 +616,7 @@ int FunctionHeader(const char *name, bool hasReturnType, typeId returnType,
  * @return 99 v pripade internej chyby
  * @return 6 v pripade nekompatibility typov alebo ked je UNDEFINED typ
  * @return 7 ak sa snazime priradit hodnotu funkcii alebo ked sa snazime zmenit hodnotu konstantnej
- * premennej
- * @return 3 ak ani ani premenna ani funkcia s tymto menom neexistuje
+ * premennej, ked lava strana neoznacuje preddefinovanu modifikovatelnu premennu
  * @return 0 v pripade uspechu
  * @brief Funkcia ktora kontroluje podmienky pre priradovanie hodnoty ku premennej.
  */
@@ -614,7 +634,7 @@ int AssignValueToVar(const char *name, typeId valueType) {
             return 7;
     }
     if (!found)
-        return 3;
+        return 7;
     if (data.isConst)
         return 7;
     if (!CheckTypeCompatibility(valueType, data.type))
@@ -1096,3 +1116,58 @@ int StatementValueType(typeId valueType) {
  * @brief overuje ci program obsahuje definiciu main
  */
 int CheckMain(void) { return mainAlreadyDefined ? 0 : 3; }
+
+int GetFunctionSignature(const char *name, typeId *typeArr, const int arrSize, int *capacity,
+                         typeId *returnType) {
+    if (name == NULL || capacity == NULL || returnType == NULL)
+        return 99;
+    symbolData data;
+    if (!(LookupVar(rootTable, name, &data))) {
+        if (!(LookupFunction(rootTable, name, &data))) {
+            return 3;
+        }
+    }
+    if (data.type < TYPE_ID_BASE)
+        return 6;
+    if (data.type >= TYPE_ID_BASE + types.filledCount)
+        return 99;
+    int index = data.type - TYPE_ID_BASE;
+    funcType *signature = &types.functionTypes[index];
+    if (signature->paramCount > arrSize)
+        return 99;
+    if (signature->paramCount > 0 && typeArr == NULL)
+        return 99;
+    *capacity = signature->paramCount;
+    typeId retType = signature->returnId;
+
+    for (int i = 0; i < signature->paramCount; i++) {
+        typeArr[i] = signature->idParams[i];
+    }
+
+    switch (retType) {
+    case 0:
+        return 6;
+    case 1:
+        *returnType = TYPE_INT;
+        break;
+    case 2:
+        *returnType = TYPE_DOUBLE;
+        break;
+    case 3:
+        *returnType = TYPE_STRING;
+        break;
+    case 4:
+        *returnType = TYPE_BOOLEAN;
+        break;
+    case 5:
+        *returnType = TYPE_UNIT;
+        break;
+    case 6:
+        *returnType = TYPE_ANY;
+        break;
+    default:
+        *returnType = retType;
+        break;
+    }
+    return 0;
+}
