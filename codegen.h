@@ -99,11 +99,13 @@ int GenWhileEnd(codeGen *cg);
 /* ---------- Built-in funkcie ---------- */
 int GenBuiltinReadInt(codeGen *cg);
 int GenBuiltinReadDouble(codeGen *cg);
-int GenBuiltinReadString(codeGen *cg);
+int GenBuiltinReadLine(codeGen *cg);
 int GenBuiltinPrint(codeGen *cg, bool isUnit, bool pushUnitResult);
 int GenBuiltinToStr(codeGen *cg, char kind);
 int GenBuiltinToInt(codeGen *cg);
 int GenBuiltinStrLength(codeGen *cg);
 int GenBuiltinChr(codeGen *cg);
+int GenBuiltinOrd(codeGen *cg);
+int GenBuiltinSubStr(codeGen *cg);
 
 #endif

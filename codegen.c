@@ -187,7 +187,10 @@ int GenProlog(codeGen *cg) {
     //Pomocne globalne premenne na niektore vypocty
     if (StrBufferAppend(&cg->out, "DEFVAR GF@%discard\n") != 0 ||
         StrBufferAppend(&cg->out, "DEFVAR GF@%tmp1\n") != 0 ||
-        StrBufferAppend(&cg->out, "DEFVAR GF@%tmp2\n") != 0) {
+        StrBufferAppend(&cg->out, "DEFVAR GF@%tmp2\n") != 0 ||
+        StrBufferAppend(&cg->out, "DEFVAR GF@%tmp3\n") != 0 ||
+        StrBufferAppend(&cg->out, "DEFVAR GF@%tmp4\n") != 0 ||
+        StrBufferAppend(&cg->out, "DEFVAR GF@%tmp5\n") != 0) {
         return Return99CodeGen(cg);
     }
     if (StrBufferAppend(&cg->out, "JUMP $$main\n\n") != 0) return Return99CodeGen(cg);
@@ -992,7 +995,7 @@ int GenBuiltinReadDouble(codeGen *cg) { return GenBuiltinRead(cg, "float", "floa
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre nacitanie string
  */ 
-int GenBuiltinReadString(codeGen *cg) { return GenBuiltinRead(cg, "string", "string@"); }
+int GenBuiltinReadLine(codeGen *cg) { return GenBuiltinRead(cg, "string", "string@"); }
 
 
 
@@ -1034,7 +1037,7 @@ int GenBuiltinPrint(codeGen *cg, bool isUnit, bool pushUnitResult) {
 
 /**
  * @param cg ukazovatel na datovu strukturu generatora kodu
- * @param kind 'i' = Int, 'f' = Double, 's' = String
+ * @param kind 'i' = Int, 'f' = Double, 's' = String, 'u' = Unit
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre prevod int/float do string
  */ 
@@ -1043,6 +1046,16 @@ int GenBuiltinToStr(codeGen *cg, char kind) {
 
     if (kind == 's') {
         //Na vrchole zasobnika je retazec, ktory netreba dalej prevadzat
+        return 0;
+    }
+
+    //Ak ide o Unit
+    if (kind == 'u') {
+        if (StrBufferAppend(&cg->funBody,
+                "POPS GF@%discard\n"
+                "PUSHS string@()\n") != 0) {
+            return Return99CodeGen(cg);
+        }
         return 0;
     }
 
@@ -1096,9 +1109,96 @@ int GenBuiltinStrLength(codeGen *cg) {
 int GenBuiltinChr(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody,
-            "POPS GF@%tmp1\n"
+            "POPS GF@%tmp1\n" 
             "INT2CHAR GF@%tmp2 GF@%tmp1\n"
             "PUSHS GF@%tmp2\n") != 0) {
+        return Return99CodeGen(cg);
+    }
+    return 0;
+}
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre built-in funkciu ord
+ */ 
+int GenBuiltinOrd(codeGen *cg) {
+    if (!cg) return 99;
+
+    int id = ++cg->labelCounter;
+    char buf[INIT_SIZE*8];
+    int written = snprintf(buf, sizeof(buf),
+            "POPS GF@%%tmp1\n"                              //tmp1 = index
+            "POPS GF@%%tmp2\n"                              //tmp2 = value
+
+            "LT GF@%%tmp3 GF@%%tmp1 int@0\n"                //index < 0
+            "JUMPIFEQ $ord_err$%d GF@%%tmp3 bool@true\n"    
+
+            "STRLEN GF@%%tmp3 GF@%%tmp2\n"                  //tmp3 = len
+            "LT GF@%%tmp3 GF@%%tmp1 GF@%%tmp3\n"            //index < len ?
+            "JUMPIFEQ $ord_err$%d GF@%%tmp3 bool@false\n"   
+
+            "STRI2INT GF@%%tmp3 GF@%%tmp2 GF@%%tmp1\n"
+            "PUSHS GF@%%tmp3\n"
+            "JUMP $ord_end$%d\n"                            
+
+            "LABEL $ord_err$%d\n"                           
+            "PUSHS int@-1\n"
+            "LABEL $ord_end$%d\n",                          
+            id, id, id, id, id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf)) {
+        return Return99CodeGen(cg);
+    }
+    if (StrBufferAppend(&cg->funBody, buf) != 0) {
+        return Return99CodeGen(cg);
+    }
+    return 0;
+}
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre built-in funkciu subStr
+ */ 
+int GenBuiltinSubStr(codeGen *cg) {
+    if (cg == NULL) return 99;
+
+    int id = ++cg->labelCounter;
+    char buf[INIT_SIZE*9];
+    int written = snprintf(buf, sizeof(buf),
+            "POPS GF@%%tmp1\n"                              //tmp1 = end
+            "POPS GF@%%tmp2\n"                              //tmp2 = start
+            "POPS GF@%%tmp3\n"                              //tmp3 = value
+            "STRLEN GF@%%tmp4 GF@%%tmp3\n"                  //tmp4 = len
+
+            "LT GF@%%tmp5 GF@%%tmp2 int@0\n"                //start < 0
+            "JUMPIFEQ $ss_err$%d GF@%%tmp5 bool@true\n"     
+            "GT GF@%%tmp5 GF@%%tmp2 GF@%%tmp1\n"            //start > end
+            "JUMPIFEQ $ss_err$%d GF@%%tmp5 bool@true\n"     
+            "GT GF@%%tmp5 GF@%%tmp1 GF@%%tmp4\n"            //end > len
+            "JUMPIFEQ $ss_err$%d GF@%%tmp5 bool@true\n"     
+            "JUMPIFEQ $ss_err$%d GF@%%tmp2 GF@%%tmp4\n"     //start >= len
+
+            "MOVE GF@%%tmp5 string@\n"                      //vysledok
+            "LABEL $ss_loop$%d\n"                           
+            "JUMPIFEQ $ss_done$%d GF@%%tmp2 GF@%%tmp1\n"    //start == end
+            "GETCHAR GF@%%tmp4 GF@%%tmp3 GF@%%tmp2\n"
+            "CONCAT GF@%%tmp5 GF@%%tmp5 GF@%%tmp4\n"
+            "ADD GF@%%tmp2 GF@%%tmp2 int@1\n"
+            "JUMP $ss_loop$%d\n"                            
+
+            "LABEL $ss_err$%d\n"                            
+            "EXIT int@40\n"
+
+            "LABEL $ss_done$%d\n"                           
+            "PUSHS GF@%%tmp5\n",
+            id, id, id, id, id, id, id, id, id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf)) {
+        return Return99CodeGen(cg);
+    }
+    if (StrBufferAppend(&cg->funBody, buf) != 0) {
         return Return99CodeGen(cg);
     }
     return 0;
