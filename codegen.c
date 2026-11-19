@@ -12,8 +12,12 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define INIT_SIZE 128
-
+/*----------PRACA SO STRING BUFFEROM----------*/
+/**
+ * @param buff ukazovatel na datovu strukturu string bufferu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief inicializacia string bufferu
+ */
 int StrBufferInit(stringBuff *buff) {
 
     buff->length = 0;
@@ -27,6 +31,10 @@ int StrBufferInit(stringBuff *buff) {
     return 0;
 }
 
+/**
+ * @param buff ukazovatel na datovu strukturu string bufferu
+ * @brief uvolnenie pamata string bufferu
+ */
 void StrBufferFree(stringBuff *buff) {
 
     free(buff->data);
@@ -36,6 +44,11 @@ void StrBufferFree(stringBuff *buff) {
     buff->data = NULL;
 }
 
+/**
+ * @param buff ukazovatel na datovu strukturu string bufferu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief dvojnasobne zvacsenie kapacity string bufferu
+ */
 int StrBufferResize(stringBuff *buff) {
 
     size_t newCapacity = buff->capacity * 2;
@@ -54,6 +67,11 @@ int StrBufferResize(stringBuff *buff) {
     return 0;
 }
 
+/**
+ * @param buff ukazovatel na datovu strukturu string bufferu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief pripojenie stringu na koniec string bufferu
+ */
 int StrBufferAppend(stringBuff *buff, const char *cmd) {
     size_t cmdLen = strlen(cmd);
 
@@ -68,6 +86,14 @@ int StrBufferAppend(stringBuff *buff, const char *cmd) {
     return 0;
 }
 
+
+/*-----------Cyklus Generatora----------*/
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief inicializacia struktury generatora kodu
+ */
 int CodeGenInit(codeGen *cg) {
     
     if (!cg) return 99;
@@ -103,6 +129,10 @@ int CodeGenInit(codeGen *cg) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @brief uvolnenie pamate struktury generatora
+ */
 void CodeGenFree(codeGen *cg) {
     StrBufferFree(&cg->out);
     StrBufferFree(&cg->funBody);
@@ -131,15 +161,23 @@ void CodeGenFree(codeGen *cg) {
     cg->currentFunc = NULL;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 99 
+ * @brief helper funkcia - uvolnenie generatora kodu s navratovou hodnotou 99
+ */
 int Return99CodeGen(codeGen *cg) {
     if (cg) CodeGenFree(cg);
     return 99;
 }
 
+
+/* ---------- Program a funkcie ---------- */
+
 /**
- * @param cg datova struktura generatoru kodu
+ * @param cg ukazovatel na datovu strukturu generatora kodu
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
- * @brief generuje hlavicku programu v cielovom kode
+ * @brief generacia uvodu v cielovom kode s deklarovanim niekolkych pomocnych globalnych premennych
  */
 int GenProlog(codeGen *cg) {
     if (!cg) return 99;
@@ -159,11 +197,11 @@ int GenProlog(codeGen *cg) {
 }
 
 /**
- * @param cg datova struktura generatoru kodu
- * @param funcName meno spracovavanej funkcie
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param funcName nazov spracovavanej funkcie
  * @param isMain urcuje ci je spracovavana funkcia main
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
- * @brief generuje cielovy kod pre hlavicku funkcie
+ * @brief generacia cieloveho kodu pre hlavicku funkcie
  */
 int GenFunStart(codeGen *cg, const char *funcName, bool isMain) {
     if (!cg) return 99;
@@ -171,19 +209,23 @@ int GenFunStart(codeGen *cg, const char *funcName, bool isMain) {
 
     cg->currentFunc = funcName;
 
+    //Vycistenie priestoru pre deklarovanie premennych
     for (int i = 0; i < cg->varCount; i++) {
         free(cg->vars[i].name);
         free(cg->vars[i].unique);
     }
     cg->varCount = 0;
     
+    //Vynulovanie urovne vnorenia blokov, cyklov a vetvenia
     cg->scopeDepth = 0;
     cg->labelStackTop = 0;
 
+    //Vytvorenie noveho unikatneho ID bloku a ulozenie otvoreneho bloku medzi aktivne
     cg->nextScopeId++;
     cg->activeScopes[cg->scopeDepth] = cg->nextScopeId;
-    cg->scopeDepth++;
+    cg->scopeDepth++; //Nastavenie zakladneho rozsahu funkcie (vnorenie 1)
 
+    //Generacia cieloveho kodu
     if (isMain) {
         if (StrBufferAppend(&cg->funHeader, "LABEL $$main\n") != 0) return Return99CodeGen(cg);
     } else {
@@ -197,27 +239,39 @@ int GenFunStart(codeGen *cg, const char *funcName, bool isMain) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param isMain je aktualna funkcia main?
+ * @param bodyLeavesValue ma aktualna funkcia vracat nejaku hodnotu?
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia ukoncenia funkcie v cielovom kode
+ */
 int GenFunEnd(codeGen *cg, bool isMain, bool bodyLeavesValue) {
     if (!cg) return 99;
 
     if (isMain) {
         if (StrBufferAppend(&cg->funBody, "EXIT int@0\n") != 0) return Return99CodeGen(cg);
     } else {
+
+        //Ak funkcia nevracia navratovu hodnotu
         if (!bodyLeavesValue) {
             if (StrBufferAppend(&cg->funBody, "PUSHS nil@nil\n") != 0) return Return99CodeGen(cg);
         }
+
         if (StrBufferAppend(&cg->funBody, "POPFRAME\nRETURN\n") != 0) return Return99CodeGen(cg);
     }
 
+    //Pripojenie bufferu hlavicky funkcie k bufferu cieloveho vystupu
     if (cg->funHeader.length > 0) {
         if (StrBufferAppend(&cg->out, cg->funHeader.data) != 0) return Return99CodeGen(cg);
     }
 
+    //Pripojenie bufferu tela funkcie k bufferu cieloveho vystupu
     if (cg->funBody.length > 0) {
         if (StrBufferAppend(&cg->out, cg->funBody.data) != 0) return Return99CodeGen(cg);
     }
     
-
+    //Vynulovanie bufferov hlavicky a tela funkcie
     cg->funHeader.length = 0;
     if (cg->funHeader.data != NULL) {
         cg->funHeader.data[0] = '\0';
@@ -241,6 +295,52 @@ int GenFunEnd(codeGen *cg, bool isMain, bool bodyLeavesValue) {
     return 0;
 }
 
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param params ukazovatel na pole stringov-parametrov
+ * @param paramCount pocet parametrov
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia uvodu v cielovom kode s deklarovanim niekolkych pomocnych globalnych premennych
+ */
+int GenFuncParams(codeGen *cg, const char **params, int paramCount) {
+    if (cg == NULL || (paramCount > 0 && params == NULL)) {
+        return Return99CodeGen(cg);
+    }
+
+    if (paramCount == 0) {
+        return 0;
+    }
+
+    /*Parametre najskor zaregistrujeme v normalnom poradi (deklaracia DEFVAR a zapis do cg->vars).
+    Najskor deklarovanie premennych, do ktorych sa parametre budu ukladat*/
+    for (int i = 0; i < paramCount; i++) {
+        if (GenDefVar(cg, params[i]) != 0) return 99;
+    }
+
+    // Vyberat ich ale budeme naopak, lebo na zasobnik su napushovane zlava
+    for (int i = paramCount - 1; i >= 0; i--) {
+        const char *unique = FindUniqueVar(cg, params[i]); //Najdenie pred chvilou vytvorenej premennej
+        
+        if (unique == NULL) return Return99CodeGen(cg);
+
+        //Presunutie najvrchnejsieho (praveho) parametra zo zasobnika do prislusnej premennej 
+        if (StrBufferAppend(&cg->funBody, "POPS LF@") != 0 ||
+            StrBufferAppend(&cg->funBody, unique) != 0 ||
+            StrBufferAppend(&cg->funBody, "\n") != 0) return Return99CodeGen(cg);
+    }
+
+    return 0;
+
+}
+
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param funcName nazov funkcie
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre volanie funkcie
+ */
 int GenCall(codeGen *cg, const char *funcName) {
     if (cg == NULL || funcName == NULL) {
         return 99;
@@ -256,16 +356,53 @@ int GenCall(codeGen *cg, const char *funcName) {
 }
 
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param hasReturnValue ma funkcia navratovu hodnotu?
+ * @param isMain je funkcia main?
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre return funkcie
+ */
+int GenReturn(codeGen *cg, bool hasReturnValue, bool isMain) {
+    if (cg == NULL) {
+        return 99;
+    }
+
+    if (isMain) {
+        if (StrBufferAppend(&cg->funBody, "EXIT int@0\n") != 0) return Return99CodeGen(cg);
+        
+        return 0;
+    }
+
+    if (!hasReturnValue) {
+        if (StrBufferAppend(&cg->funBody, "PUSHS nil@nil\n") != 0) return Return99CodeGen(cg);
+        
+    }
+
+    if (StrBufferAppend(&cg->funBody, "POPFRAME\nRETURN\n") != 0) return Return99CodeGen(cg);
+    
+
+    return 0;
+}
+
+
+/* ---------- Pushovanie konstant ---------- */
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param value int na pushnutie
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre pushnutie int
+ */
 int GenPushInt(codeGen *cg, long long value) {
     if (cg == NULL) {
         return 99;
     }
 
+    //konverzia hodnoty na string
     char numBuf[INIT_SIZE];
     int written = snprintf(numBuf, sizeof(numBuf), "%lld", value);
-    if (written < 0 || (size_t)written >= sizeof(numBuf)) {
-        return Return99CodeGen(cg);
-    }
+    if (written < 0 || (size_t)written >= sizeof(numBuf)) return Return99CodeGen(cg);
 
     if (StrBufferAppend(&cg->funBody, "PUSHS int@") != 0 ||
         StrBufferAppend(&cg->funBody, numBuf) != 0 ||
@@ -276,9 +413,16 @@ int GenPushInt(codeGen *cg, long long value) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param value float na pushnutie
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre pushnutie float
+ */
 int GenPushFloat(codeGen *cg, double value) {
     if (cg == NULL) return 99;
 
+    //konverzia float na int
     char numBuf[INIT_SIZE];
     int written = snprintf(numBuf, sizeof(numBuf), "%a", value);
     if (written < 0 || (size_t)written >= sizeof(numBuf)) {
@@ -294,6 +438,11 @@ int GenPushFloat(codeGen *cg, double value) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre pushnutie ()
+ */
 int GenPushUnit(codeGen *cg) {
     if (cg == NULL) return 99;
 
@@ -304,6 +453,12 @@ int GenPushUnit(codeGen *cg) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param value true/false na pushnutie
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre pushnutie bool hodnoty
+ */
 int GenPushBool(codeGen *cg, bool value) {
     if (cg == NULL) return 99;
 
@@ -315,6 +470,12 @@ int GenPushBool(codeGen *cg, bool value) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param str string na pushnutie
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu na pushnutie string
+ */
 int GenPushString(codeGen *cg, const char *str) {
     if (cg == NULL || str == NULL) {
         return 99;
@@ -324,31 +485,39 @@ int GenPushString(codeGen *cg, const char *str) {
         return Return99CodeGen(cg);
     }
 
+    //Hladanie znakov so specialnym zapisom
     char esc[8];
     for (size_t i = 0; str[i] != '\0'; i++) {
-        unsigned char c = (unsigned char)str[i];
+        unsigned char c = (unsigned char)str[i]; //Unsigned, aby nebol problem so znamienkom
+
+        //Ak ASCII kod mensi ako 32, # alebo '\\', zapis pomocou specialneho formatu
         if (c <= 32 || c == '#' || c == '\\') {
-            snprintf(esc, sizeof(esc), "\\%03u", c);
-            if (StrBufferAppend(&cg->funBody, esc) != 0) {
-                return Return99CodeGen(cg);
-            }
-        } else {
-            char ch[2] = {c, '\0'};
-            if (StrBufferAppend(&cg->funBody, ch) != 0) {
-                return Return99CodeGen(cg);
-            }
+
+            snprintf(esc, sizeof(esc), "\\%03u", c); //Specialny format: '\\0xx'
+
+            if (StrBufferAppend(&cg->funBody, esc) != 0) return Return99CodeGen(cg);
+
+            //Inak zapis znak klasicky
+        } else { 
+            char ch[2] = {c, '\0'}; //Musime pridat '\0', pretoze to bude posledny znak v bufferi
+            if (StrBufferAppend(&cg->funBody, ch) != 0) return Return99CodeGen(cg);
         }
     }
 
-    if (StrBufferAppend(&cg->funBody, "\n") != 0) {
-        return Return99CodeGen(cg);
-    }
+    if (StrBufferAppend(&cg->funBody, "\n") != 0) return Return99CodeGen(cg);
 
     return 0;
 }
 
 
+/* ---------- Premenne a bloky ---------- */
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param varName nazov premennej
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre deklarovanie lokalnej premennej
+ */
 int GenDefVar(codeGen *cg, const char *varName) {
     if (cg == NULL || varName == NULL || cg->scopeDepth <= 0) {
         return Return99CodeGen(cg);
@@ -374,11 +543,12 @@ int GenDefVar(codeGen *cg, const char *varName) {
         return Return99CodeGen(cg);
     }
 
-    // Ulozenie premennej do zoznamu premennych
+    //Ulozenie premennej do zoznamu premennych
     cg->vars[cg->varCount].name = strdup(varName);
     cg->vars[cg->varCount].unique = strdup(unique);
     cg->vars[cg->varCount].scopeID = currentScopeId;
 
+    //Ak chyba tak vycisti
     if (!cg->vars[cg->varCount].name || !cg->vars[cg->varCount].unique) {
         free(cg->vars[cg->varCount].name);
         free(cg->vars[cg->varCount].unique);
@@ -397,14 +567,23 @@ int GenDefVar(codeGen *cg, const char *varName) {
     return 0;
 }
 
-// Nájde najvnútornejšiu platnú verziu premennej (rieši shadowing)
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param varName nazov hladanej premennej
+ * @return NULL ak sa premenna nenasla, unikatny nazov premennej ak sa nasla
+ * @brief vyhladanie najvnutornejsej aktivnej premennej s danym menom
+ */
 const char *FindUniqueVar(codeGen *cg, const char *varName) {
     if (cg == NULL || varName == NULL) return NULL;
 
-    // Prehladavame aktivne bloky zvnutra von
+    //Prehladavanie aktivnych bloky zvnutra von
     for (int d = cg->scopeDepth - 1; d >= 0; d--) {
         int scopeId = cg->activeScopes[d];
+
+        //Prehladavanie aktivnych premennych od konca
         for (int i = cg->varCount - 1; i >= 0; i--) {
+
+            //Ak zhoda meno a ID prehladavaneho bloku, tak return jej unikatneho mena
             if (cg->vars[i].scopeID == scopeId && strcmp(cg->vars[i].name, varName) == 0) {
                 return cg->vars[i].unique;
             }
@@ -413,13 +592,16 @@ const char *FindUniqueVar(codeGen *cg, const char *varName) {
     return NULL;
 }
 
-
-
-
-// Vlozi hodnotu premennej na zasobnik
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param varName nazov premennej
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre pushnutie premennej
+ */
 int GenPushVar(codeGen *cg, const char *varName) {
     if (cg == NULL || varName == NULL) return 99;
 
+    //Najde najvnorenejsiu premennu s rovnakym menom
     const char *unique = FindUniqueVar(cg, varName);
     if (unique == NULL) return Return99CodeGen(cg);
 
@@ -430,7 +612,11 @@ int GenPushVar(codeGen *cg, const char *varName) {
     return 0;
 }
 
-// Vyberie vrchol zasobnika a ulozi do premennej
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre vybratia vrcholu zasobnika do premennej
+ */
 int GenPopToVar(codeGen *cg, const char *varName) {
     if (cg == NULL || varName == NULL) return 99;
 
@@ -444,92 +630,60 @@ int GenPopToVar(codeGen *cg, const char *varName) {
     return 0;
 }
 
-// Kos na odpratanie vrcholu zasobnika
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu na odpratanie vrchnej hodnoty zasobnika
+ */
 int GenPopDiscard(codeGen *cg) {
     if (cg == NULL) return 99;
 
+    //Pouziva sa pomocna globalna premenna deklarovana vo funkcii GenProlog
     if (StrBufferAppend(&cg->funBody, "POPS GF@%discard\n") != 0) return Return99CodeGen(cg);
 
     return 0;
 }
 
 
-
-int GenFuncParams(codeGen *cg, const char **params, int paramCount) {
-    if (cg == NULL || (paramCount > 0 && params == NULL)) {
-        return Return99CodeGen(cg);
-    }
-
-    if (paramCount == 0) {
-        return 0;
-    }
-
-    // Parametre najskor zaregistrujeme v normalnom poradi (deklaracia DEFVAR a zapis do cg->vars)
-    for (int i = 0; i < paramCount; i++) {
-        if (GenDefVar(cg, params[i]) != 0) return 99;
-    }
-
-    // Vyberat ich ale budeme naopak
-    for (int i = paramCount - 1; i >= 0; i--) {
-        const char *unique = FindUniqueVar(cg, params[i]);
-        
-        if (unique == NULL) return Return99CodeGen(cg);
-
-        if (StrBufferAppend(&cg->funBody, "POPS LF@") != 0 ||
-            StrBufferAppend(&cg->funBody, unique) != 0 ||
-            StrBufferAppend(&cg->funBody, "\n") != 0) return Return99CodeGen(cg);
-    }
-
-    return 0;
-
-}
-
-
-int GenReturn(codeGen *cg, bool hasReturnValue, bool isMain) {
-    if (cg == NULL) {
-        return 99;
-    }
-
-    if (isMain) {
-        if (StrBufferAppend(&cg->funBody, "EXIT int@0\n") != 0) return Return99CodeGen(cg);
-        
-        return 0;
-    }
-
-    if (!hasReturnValue) {
-        if (StrBufferAppend(&cg->funBody, "PUSHS nil@nil\n") != 0) return Return99CodeGen(cg);
-        
-    }
-
-    if (StrBufferAppend(&cg->funBody, "POPFRAME\nRETURN\n") != 0) return Return99CodeGen(cg);
-    
-
-    return 0;
-}
-
-
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief Registracia vchodu do noveho bloku
+ */
 int GenScopeEnter(codeGen *cg) {
     if (cg == NULL) return 99;
 
     if (cg->scopeDepth >= INIT_SIZE) return Return99CodeGen(cg);
 
-    cg->nextScopeId++;
-    cg->activeScopes[cg->scopeDepth] = cg->nextScopeId;
-    cg->scopeDepth++;
+    cg->nextScopeId++; //Vytvorenie noveho ID bloku
+    cg->activeScopes[cg->scopeDepth] = cg->nextScopeId; //Vlozenie bloku medzi aktivne bloky
+    cg->scopeDepth++; //Inkrementacia hlbky vnorenia
 
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief registracia opustenia bloku
+ */
 int GenScopeExit(codeGen *cg) {
     if (cg == NULL || cg->scopeDepth <= 1) return Return99CodeGen(cg);
 
-    cg->scopeDepth--;
+    //Dekrementacia hlbky vnorenia - zaroven odpojenie od aktivnych blokov (iteruje sa podla scopeDepth)
+    cg->scopeDepth--; 
     return 0;
 }
 
 
 
-// Pretypuje vrchol zásobníka z Int na Double
+/* ---------- Vyrazy ---------- */
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu na pretypovanie vrcholu zasobnika z int na float
+ */
 int GenInt2FloatTop(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody, "INT2FLOATS\n") != 0) {
@@ -537,8 +691,11 @@ int GenInt2FloatTop(codeGen *cg) {
     }
     return 0;
 }
-
-// Pretypuje druhý prvok od vrchu z Int na Double (ľavý operand pri zmiešanom výraze)
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief Pretypuje druhy prvok od vrchu zasobnika z int na float (lavy operand pri zmiesanom vyraze)
+ */
 int GenInt2FloatSecond(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody,
@@ -550,11 +707,16 @@ int GenInt2FloatSecond(codeGen *cg) {
     return 0;
 }
 
-
-
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param isFloat je hodnota float?
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre vytvorenie unarneho minusu (potrebne urobit pomocou 0 - hodnota)
+ */
 int GenUnaryMinus(codeGen *cg, bool isFloat) {
     if (cg == NULL) return 99;
 
+    //Ak float tak sa pushne float 0, ak int tak sa pushne int 0
     const char *zero = isFloat ? "PUSHS float@0x0p+0\n" : "PUSHS int@0\n";
     if (StrBufferAppend(&cg->funBody, "POPS GF@%tmp1\n") != 0 ||
         StrBufferAppend(&cg->funBody, zero) != 0 ||
@@ -564,6 +726,11 @@ int GenUnaryMinus(codeGen *cg, bool isFloat) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre negaciu hodnoty
+ */ 
 int GenNot(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody, "NOTS\n") != 0) {
@@ -573,9 +740,14 @@ int GenNot(codeGen *cg) {
 }
 
 
-
-
-// op: '+', '-', '*', '/', '<', 'L' (<=), '>', 'G' (>=), '=' (==), '!' (!=), '&' (&&), '|' (||)
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param op operand: '+', '-', '*', '/', '<', 'L' (<=), '>', 'G' (>=), '=' (==), '!' (!=), '&' (&&), '|' (||)
+ * @param isString ide o string operaciu?
+ * @param isIntDiv ide o delenie int cisel?
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre binarne operacie
+ */
 int GenBinaryOp(codeGen *cg, char op, bool isString, bool isIntDiv) {
     if (cg == NULL) return 99;
 
@@ -644,13 +816,22 @@ int GenBinaryOp(codeGen *cg, char op, bool isString, bool isIntDiv) {
 }
 
 
-// 1. Zavoláš hneď po vyhodnotení podmienky if (výsledok bool je na vrchole zásobníka)
+
+/* ---------- Riadenie toku programu ---------- */
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre zaciatok konstrukcie if (zavolane po vyhodnoteni podmienky vo vyraze)
+ */ 
 int GenIfStart(codeGen *cg) {
     if (cg == NULL || cg->labelStackTop >= INIT_SIZE) return Return99CodeGen(cg);
 
+    //Zvysenie indexu vnorenia konstrukcii IF, WHILE
     int id = ++cg->labelCounter;
-    cg->labelStack[cg->labelStackTop++] = id;
+    cg->labelStack[cg->labelStackTop++] = id; 
 
+    //Kontrola splnenie podmienky vo vyraze
     char buf[INIT_SIZE];
     snprintf(buf, sizeof(buf),
              "PUSHS bool@false\n"
@@ -660,12 +841,18 @@ int GenIfStart(codeGen *cg) {
     return 0;
 }
 
-// 2. Zavoláš na konci vetvy THEN (pred spracovaním prípadného ELSE)
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre koniec vetvy THEN, vytvorenie navestidla pre vetvu ELSE
+ */ 
 int GenIfElse(codeGen *cg) {
     if (cg == NULL || cg->labelStackTop <= 0) return Return99CodeGen(cg);
 
+    //Zistenie ID aktualnej konstrukcie IF
     int id = cg->labelStack[cg->labelStackTop - 1];
 
+    //Vytvorenie navestidla pre vetvu else
     char buf[INIT_SIZE];
     snprintf(buf, sizeof(buf),
              "JUMP $endif$%d\n"
@@ -675,12 +862,18 @@ int GenIfElse(codeGen *cg) {
     return 0;
 }
 
-// 3. Zavoláš na úplnom konci celého if-else príkazu
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre koniec konstrukcie IF
+ */ 
 int GenIfEnd(codeGen *cg) {
     if (cg == NULL || cg->labelStackTop <= 0) return Return99CodeGen(cg);
 
-    int id = cg->labelStack[--cg->labelStackTop];
+    //Zistenie ID aktualnej konstrukcie IF
+    int id = cg->labelStack[--cg->labelStackTop]; 
 
+    //Generacia navestidla na ukoncenia IF
     char buf[INIT_SIZE];
     snprintf(buf, sizeof(buf), "LABEL $endif$%d\n", id);
 
@@ -689,13 +882,19 @@ int GenIfEnd(codeGen *cg) {
 }
 
 
-// 1. Zavoláš PRED vyhodnotením podmienky cyklu while
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre zaciatok cyklu WHILE
+ */ 
 int GenWhileStart(codeGen *cg) {
     if (cg == NULL || cg->labelStackTop >= INIT_SIZE) return Return99CodeGen(cg);
 
+    //Zvysenie urovne vnorenia konstrukcii IF, WHILE
     int id = ++cg->labelCounter;
     cg->labelStack[cg->labelStackTop++] = id;
 
+    //Vytvorenie navestidla pre zaciatok WHILE
     char buf[INIT_SIZE];
     snprintf(buf, sizeof(buf), "LABEL $while_start$%d\n", id);
 
@@ -703,12 +902,18 @@ int GenWhileStart(codeGen *cg) {
     return 0;
 }
 
-// 2. Zavoláš HNEĎ PO vyhodnotení podmienky (výsledok bool je na vrchole zásobníka)
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre overenie podmienky cyklenia
+ */ 
 int GenWhileCond(codeGen *cg) {
     if (cg == NULL || cg->labelStackTop <= 0) return Return99CodeGen(cg);
 
+    //Zistenie ID aktualnej konstrukcie WHILE
     int id = cg->labelStack[cg->labelStackTop - 1];
 
+    //Kontrola podmienky
     char buf[INIT_SIZE];
     snprintf(buf, sizeof(buf),
              "PUSHS bool@false\n"
@@ -718,12 +923,18 @@ int GenWhileCond(codeGen *cg) {
     return 0;
 }
 
-// 3. Zavoláš na KONCI tela cyklu while
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre koniec cyklu WHILE
+ */ 
 int GenWhileEnd(codeGen *cg) {
     if (cg == NULL || cg->labelStackTop <= 0) return Return99CodeGen(cg);
 
+    //Zistenie ID aktualnej konstrukcie WHILE
     int id = cg->labelStack[--cg->labelStackTop];
 
+    //Generacia navestidla na ukoncenie cyklu a skoku naspat na zaciatok
     char buf[INIT_SIZE];
     snprintf(buf, sizeof(buf),
              "JUMP $while_start$%d\n"
@@ -734,11 +945,23 @@ int GenWhileEnd(codeGen *cg) {
 }
 
 
+
+/* ---------- Built-in funkcie ---------- */
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param type typ, ktory sa bude citat
+ * @param defVal prislusna nulova hodnota k nacitavanemu typu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief pomocna funkcia pre generaciu kodu built-in funkcii nacitavania
+ */ 
 static int GenBuiltinRead(codeGen *cg, const char *type, const char *defVal) {
     if (cg == NULL) return 99;
 
     int id = ++cg->labelCounter;
     char buf[INIT_SIZE];
+
+    //Vygenerovanie navestidla - pokial je nacitana hodnota NULL, tak je ulozena prislusna nulova hodnota
     snprintf(buf, sizeof(buf),
              "READ GF@%%tmp1 %s\n"
              "JUMPIFNEQ $rd_ok$%d GF@%%tmp1 nil@nil\n"
@@ -750,15 +973,36 @@ static int GenBuiltinRead(codeGen *cg, const char *type, const char *defVal) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre nacitanie int
+ */ 
 int GenBuiltinReadInt(codeGen *cg)    { return GenBuiltinRead(cg, "int", "int@0"); }
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre nacitanie float
+ */ 
 int GenBuiltinReadDouble(codeGen *cg) { return GenBuiltinRead(cg, "float", "float@0x0p+0"); }
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre nacitanie string
+ */ 
 int GenBuiltinReadString(codeGen *cg) { return GenBuiltinRead(cg, "string", "string@"); }
 
 
 
-// Vypíše hodnotu z vrcholu dátového zásobníka cez WRITE
-// isUnit: true ak ide o hodnotu () typu Unit (vypíše "()")
-// pushUnitResult: true ak má na zásobníku zostať nil@nil (návratová hodnota Unit)
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param isUnit funckia bola zavolana bez parametrov
+ * @param pushUnitResult je potrebne pushnut na zasobnik unit
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre vypisanie vrchnej hodnoty na zasobniku
+ */ 
 int GenBuiltinPrint(codeGen *cg, bool isUnit, bool pushUnitResult) {
     if (cg == NULL) return 99;
 
@@ -788,13 +1032,17 @@ int GenBuiltinPrint(codeGen *cg, bool isUnit, bool pushUnitResult) {
 
 
 
-// toStr pre Int / Double / String
-// kind: 'i' = Int, 'f' = Double, 's' = String
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param kind 'i' = Int, 'f' = Double, 's' = String
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre prevod int/float do string
+ */ 
 int GenBuiltinToStr(codeGen *cg, char kind) {
     if (cg == NULL) return 99;
 
     if (kind == 's') {
-        // Reťazec už je na vrchole zásobníka
+        //Na vrchole zasobnika je retazec, ktory netreba dalej prevadzat
         return 0;
     }
 
@@ -811,7 +1059,11 @@ int GenBuiltinToStr(codeGen *cg, char kind) {
     return 0;
 }
 
-// toInt(value: Double): Int
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre prevod float do int
+ */ 
 int GenBuiltinToInt(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody, "FLOAT2INTS\n") != 0) {
@@ -820,9 +1072,11 @@ int GenBuiltinToInt(codeGen *cg) {
     return 0;
 }
 
-
-
-// strLength(s: String): Int
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre zistenie dlzky retazca
+ */ 
 int GenBuiltinStrLength(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody,
@@ -834,7 +1088,11 @@ int GenBuiltinStrLength(codeGen *cg) {
     return 0;
 }
 
-// chr(i: Int): String
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre prevod int do char
+ */ 
 int GenBuiltinChr(codeGen *cg) {
     if (cg == NULL) return 99;
     if (StrBufferAppend(&cg->funBody,
@@ -845,6 +1103,3 @@ int GenBuiltinChr(codeGen *cg) {
     }
     return 0;
 }
-
-
-

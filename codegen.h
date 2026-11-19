@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define INIT_SIZE 128
+
 typedef struct {
     char *data;
     size_t length;
@@ -31,13 +33,13 @@ typedef struct {
     int labelCounter;       
     int nextScopeId;         
 
-    int labelStack[128];
+    int labelStack[INIT_SIZE];
     int labelStackTop;
 
     varScope *vars;     
     int varCount;
     int varCapacity;
-    int activeScopes[128];  
+    int activeScopes[INIT_SIZE];  
     int scopeDepth;          
 
     const char *currentFunc; 
