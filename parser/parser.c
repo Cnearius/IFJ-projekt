@@ -1109,8 +1109,10 @@ static int Expr(Parser *parser, typeId *outType) {
                         result = GenPushUnit(parser->cg);
                     } else if (tokType == TOKEN_IDENT && !isCall) {
                         result = GenPushVar(parser->cg, tokName);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "print") == 0) {
+                        result = GenBuiltinPrint(parser->cg, argTypes[0] == TYPE_UNIT, true);
                     } else if (tokType == TOKEN_IDENT && isCall) {
-                        result = GenCall(parser->cg, tokName);
+                         result = GenCall(parser->cg, tokName);
                     }
                     if (result != 0)
                         return result;
@@ -1619,6 +1621,17 @@ static int SimpleStmt(Parser *parser) {
             result = AssignValueToVar(name, valueType);
             if (result != 0)
                 return result;
+
+            if (parser->genCode) {
+                result = GenPopToVar(parser->cg, name);
+                if (result != 0)
+                    return result;
+
+                result = GenPopDiscard(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+
             parser->lastKind = STMT_UNIT;
         } else {
             parser->lastKind = STMT_EXPR;
