@@ -5,6 +5,7 @@
  * @brief Implementacia funkcii na generaciu cieloveho kodu 
  */
 
+#define _POSIX_C_SOURCE 200809L //kvoli funkci strdup
 #include "codegen.h"
 #include <stdio.h>
 #include <stdlib.h>
