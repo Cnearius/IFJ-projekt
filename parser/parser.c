@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../codegen.h"
+#include <stdio.h>
 
 /**
  * @brief enum na druh posledneho prikazu
@@ -43,6 +45,8 @@ typedef struct {
     bool lastIfAllReturn;       ///< ci vsetky vetvy posledneho if koncia returnom
     bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
     bool inferPass;             ///< ci prave bezi inferencny prechod
+    codeGen *cg;                ///< pointer na generator kodu
+    bool genCode;               ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny prechod)
 } Parser;
 
 static int Advance(Parser *parser);
@@ -1922,6 +1926,13 @@ static int Program(Parser *parser) {
     result = Expect(parser, TOKEN_EOL);
     if (result != 0)
         return result;
+    
+    if(parser->genCode){
+        result = GenProlog(parser->cg);
+        if(result != 0){
+            return result;
+        }
+    }
 
     result = FunList(parser);
     if (result != 0)
@@ -1945,6 +1956,7 @@ static int Program(Parser *parser) {
  */
 int Parse(Lexer *lexer) {
     Parser parser;
+    codeGen cg;
     parser.tokenCount = 0;
     parser.lexer = lexer;
     parser.prevLine = 0;
@@ -1960,10 +1972,18 @@ int Parse(Lexer *lexer) {
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
+    result = CodeGenInit(&cg);
+    if(result != 0){
+        SemAnalysisFree();
+        return result;
+    }
+    parser.cg = &cg;
+    parser.genCode = false;
     result = FillBuffer(&parser);
     if (result != 0) {
         FreeBuffer(&parser);
         SemAnalysisFree();
+        CodeGenFree(&cg);
         return result;
     }
     parser.current = parser.fieldOfTokens[0];
@@ -1971,6 +1991,7 @@ int Parse(Lexer *lexer) {
     if (result != 0) {
         FreeBuffer(&parser);
         SemAnalysisFree();
+        CodeGenFree(&cg);
         return result;
     }
     int before;
@@ -1983,6 +2004,7 @@ int Parse(Lexer *lexer) {
         if (result == 99) {
             FreeBuffer(&parser);
             SemAnalysisFree();
+            CodeGenFree(&cg);
             return 99;
         }
 
@@ -1992,13 +2014,19 @@ int Parse(Lexer *lexer) {
     if (result != 0) {
         FreeBuffer(&parser);
         SemAnalysisFree();
+        CodeGenFree(&cg);
         return result;
     }
 
+    parser.genCode = true;
     parser.inferPass = false;
     ResetParserPosition(&parser);
     result = Program(&parser);
+    if(result == 0){
+        fputs(cg.out.data, stdout);
+    }
     FreeBuffer(&parser);
     SemAnalysisFree();
+    CodeGenFree(&cg);
     return result;
 }
