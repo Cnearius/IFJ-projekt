@@ -1064,9 +1064,29 @@ static int MemberAccess(Parser *parser, typeId *type) {
         if (result != 0)
             return result;
 
+        typeId before = *type;
+
         result = ValmemMember(*type, member, type);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            if (strcmp(member, "toString") == 0) {
+                char kind = 'i';
+                if (before == TYPE_STRING) {
+                    kind = 's';
+                } else if (before == TYPE_DOUBLE) {
+                    kind = 'f';
+                }
+                result = GenBuiltinToStr(parser->cg, kind);
+            } else if (strcmp(member, "toInt") == 0) {
+                result = GenBuiltinToInt(parser->cg);
+            } else if (strcmp(member, "length") == 0) {
+                result = GenBuiltinStrLength(parser->cg);
+            }
+            if (result != 0)
+                return result;
+        }
     }
     return 0;
 }
