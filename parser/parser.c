@@ -1263,6 +1263,12 @@ static int CloseStatement(Parser *parser) {
         int result = StatementValueType(parser->lastComType);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            result = GenPopDiscard(parser->cg);
+            if (result != 0)
+                return result;
+        }
     }
     parser->lastKind = STMT_NONE;
     return 0;
@@ -1661,7 +1667,7 @@ static int DefVar(Parser *parser) {
             result = GenDefVar(parser->cg, name);
             if (result != 0)
                 return result;
-            
+
             result = GenPopToVar(parser->cg, name);
             if (result != 0)
                 return result;
