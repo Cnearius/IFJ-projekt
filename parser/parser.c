@@ -891,12 +891,61 @@ static TokenType PrecToToken(enum PrecSymbol s) {
 }
 
 /**
+ * @brief Prevod symbolu operatora z tabulky na znak operatora
+ * @param s precedencny symbol operatora
+ * @return znak operatora
+ */
+static char PrecToGenOp(enum PrecSymbol s) {
+    switch (s) {
+    case PREC_MUL:
+        return '*';
+
+    case PREC_DIV:
+        return '/';
+
+    case PREC_PLUS:
+        return '+';
+
+    case PREC_MINUS:
+        return '-';
+
+    case PREC_LT:
+        return '<';
+
+    case PREC_LTE:
+        return 'L';
+
+    case PREC_GT:
+        return '>';
+
+    case PREC_GTE:
+        return 'G';
+
+    case PREC_EQ:
+        return '=';
+
+    case PREC_NEQ:
+        return '!';
+
+    case PREC_AND:
+        return '&';
+
+    case PREC_OR:
+        return '|';
+
+    default:
+        return 0;
+    }
+}
+
+/**
  * @brief Nahradi usek od poslednej znacky jednym E podla pravidiel (i, !E, -E, (), E op E, (E))
+* @param parser stav parsera s aktualnym tokenom
  * @param stack pointer na zasobnik
  * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik,
  * inak kod semantickej chyby
  */
-static int StackReduce(PrecStack *stack) {
+static int StackReduce(Parser *parser, PrecStack *stack) {
     int mark = -1;
     for (int i = stack->top - 1; i >= 0; i--) {
         if (stack->FieldOfItems[i].type == ITEM_MARK) {
@@ -930,12 +979,28 @@ static int StackReduce(PrecStack *stack) {
         result = Operator(b->valType, TYPE_UNDEFINED, PrecToToken(a->symbol), &newType);
         if (result != 0)
             return result;
+        if (parser->genCode) {
+            if (a->symbol == PREC_UMINUS) {
+                result = GenUnaryMinus(parser->cg, b->valType == TYPE_DOUBLE);
+                if (result != 0)
+                    return result;
+            } else {
+                result = GenNot(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+        }
     }
 
     if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_TERM &&
         b->symbol == PREC_RPAREN) {
         ok = true;
         newType = TYPE_UNIT;
+        if (parser->genCode) {
+            result = GenPushUnit(parser->cg);
+            if (result != 0)
+                return result;
+        }
     }
 
     if (count == 3 && a->type == ITEM_NONTERM && b->type == ITEM_TERM && b->symbol >= PREC_MUL &&
@@ -944,6 +1009,22 @@ static int StackReduce(PrecStack *stack) {
         result = Operator(a->valType, c->valType, PrecToToken(b->symbol), &newType);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            if (a->valType == TYPE_INT && c->valType == TYPE_DOUBLE) {
+                result = GenInt2FloatSecond(parser->cg);
+                if (result != 0)
+                    return result;
+            } else if (a->valType == TYPE_DOUBLE && c->valType == TYPE_INT) {
+                result = GenInt2FloatTop(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+            result = GenBinaryOp(parser->cg, PrecToGenOp(b->symbol), a->valType == TYPE_STRING,
+                                 a->valType == TYPE_INT && c->valType == TYPE_INT);
+            if (result != 0)
+                return result;
+        }
     }
 
     if (count == 3 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_NONTERM &&
@@ -1112,7 +1193,7 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "print") == 0) {
                         result = GenBuiltinPrint(parser->cg, argTypes[0] == TYPE_UNIT, true);
                     } else if (tokType == TOKEN_IDENT && isCall) {
-                         result = GenCall(parser->cg, tokName);
+                        result = GenCall(parser->cg, tokName);
                     }
                     if (result != 0)
                         return result;
@@ -1155,7 +1236,7 @@ static int Expr(Parser *parser, typeId *outType) {
             break;
 
         case '>':
-            result = StackReduce(&stack);
+            result = StackReduce(parser, &stack);
             if (result != 0)
                 return result;
             break;

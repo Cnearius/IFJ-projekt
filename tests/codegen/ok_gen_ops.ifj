@@ -1,0 +1,17 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    val a = 1 + 2 * 3
+    print(a)
+    val b = (1 + 2) * 3
+    print(b)
+    val c = 7 / 2
+    print(c)
+    val d = 10 - 4
+    print(d)
+    val e = 1 < 2
+    print(e)
+    val f = !(1 == 2) && true
+    print(f)
