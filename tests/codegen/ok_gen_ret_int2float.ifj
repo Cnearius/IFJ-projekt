@@ -1,0 +1,12 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+def one(): Double = 1
+
+def two(): Double =
+    return 2
+
+@main def main(): Unit =
+    print(one() + 0.5)
+    print(two() + 0.5)
