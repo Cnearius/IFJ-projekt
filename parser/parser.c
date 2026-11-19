@@ -46,9 +46,10 @@ typedef struct {
     bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
     bool inferPass;             ///< ci prave bezi inferencny prechod
     codeGen *cg;                ///< pointer na generator kodu
-    bool genCode;   ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny
-                    ///< prechod)
-    bool isMainFun; ///< ci prave spracuvame funckiu main
+    bool genCode;      ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny
+                       ///< prechod)
+    bool isMainFun;    ///< ci prave spracuvame funckiu main
+    typeId curRetType; ///< navratovy typ prave spracuvanej funkcie
 } Parser;
 
 static int Advance(Parser *parser);
@@ -1971,6 +1972,11 @@ static int RetStmt(Parser *parser) {
         if (result != 0)
             return result;
         if (parser->genCode) {
+            if (parser->curRetType == TYPE_DOUBLE && exprType == TYPE_INT) {
+                result = GenInt2FloatTop(parser->cg);
+                if (result != 0)
+                    return result;
+            }
             result = GenReturn(parser->cg, true, parser->isMainFun);
             if (result != 0)
                 return result;
@@ -2021,6 +2027,7 @@ static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasR
 
     if (parser->genCode) {
         parser->isMainFun = isMain;
+        parser->curRetType = retType;
         result = GenFunStart(parser->cg, name, isMain);
         if (result != 0)
             return result;
@@ -2081,6 +2088,12 @@ static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasR
         return result;
 
     if (parser->genCode) {
+        if (parser->lastKind == STMT_EXPR && retType == TYPE_DOUBLE &&
+            parser->lastComType == TYPE_INT) {
+            result = GenInt2FloatTop(parser->cg);
+            if (result != 0)
+                return result;
+        }
         result = GenFunEnd(parser->cg, isMain, parser->lastKind == STMT_EXPR);
         if (result != 0)
             return result;
@@ -2256,6 +2269,7 @@ int Parse(Lexer *lexer) {
     parser.lastIfAllUnit = false;
     parser.inferPass = false;
     parser.isMainFun = false;
+    parser.curRetType = TYPE_UNDEFINED;
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
