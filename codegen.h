@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define INIT_SIZE 128
+
 typedef struct {
     char *data;
     size_t length;
@@ -31,13 +33,13 @@ typedef struct {
     int labelCounter;       
     int nextScopeId;         
 
-    int labelStack[128];
+    int labelStack[INIT_SIZE];
     int labelStackTop;
 
     varScope *vars;     
     int varCount;
     int varCapacity;
-    int activeScopes[128];  
+    int activeScopes[INIT_SIZE];  
     int scopeDepth;          
 
     const char *currentFunc; 
@@ -97,11 +99,13 @@ int GenWhileEnd(codeGen *cg);
 /* ---------- Built-in funkcie ---------- */
 int GenBuiltinReadInt(codeGen *cg);
 int GenBuiltinReadDouble(codeGen *cg);
-int GenBuiltinReadString(codeGen *cg);
+int GenBuiltinReadLine(codeGen *cg);
 int GenBuiltinPrint(codeGen *cg, bool isUnit, bool pushUnitResult);
 int GenBuiltinToStr(codeGen *cg, char kind);
 int GenBuiltinToInt(codeGen *cg);
 int GenBuiltinStrLength(codeGen *cg);
 int GenBuiltinChr(codeGen *cg);
+int GenBuiltinOrd(codeGen *cg);
+int GenBuiltinSubStr(codeGen *cg);
 
 #endif
