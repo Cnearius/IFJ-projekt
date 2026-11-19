@@ -1170,12 +1170,12 @@ static int Expr(Parser *parser, typeId *outType) {
             if (isIdent && Check(parser, TOKEN_LPAREN)) {
                 isCall = true;
                 sigCount = 0;
-                if (parser->genCode){
+                if (parser->genCode) {
                     int sig = GetFunctionSignature(tokName, sigTypes, 64, &sigCount, &sigRet);
-                    if (sig == 99){
-                       return 99; 
+                    if (sig == 99) {
+                        return 99;
                     }
-                    if(sig != 0){
+                    if (sig != 0) {
                         sigCount = 0;
                     }
                 }
@@ -1242,7 +1242,7 @@ static int Expr(Parser *parser, typeId *outType) {
                         result = GenBuiltinReadDouble(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall &&
                                strcmp(tokName, "readLine") == 0) {
-                        result = GenBuiltinReadString(parser->cg);
+                        result = GenBuiltinReadLine(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toInt") == 0) {
                         result = GenBuiltinToInt(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall &&
@@ -1250,6 +1250,10 @@ static int Expr(Parser *parser, typeId *outType) {
                         result = GenBuiltinStrLength(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "chr") == 0) {
                         result = GenBuiltinChr(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "subStr") == 0) {
+                        result = GenBuiltinSubStr(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "ord") == 0) {
+                        result = GenBuiltinOrd(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toStr") == 0) {
                         char kind = 'i';
                         if (argTypes[0] == TYPE_DOUBLE) {
