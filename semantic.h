@@ -44,4 +44,6 @@ int AbortFuncBody(void);
 bool FunctionHasType(const char *name);
 int DefinedFunctionCount(void);
 int ResetSemAnalysisForFinalAnalysis(void);
+int GetFunctionSignature(const char *name, typeId *typeArr, const int arrSize, int *capacity,
+                         typeId *returnType);
 #endif

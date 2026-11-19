@@ -1096,3 +1096,58 @@ int StatementValueType(typeId valueType) {
  * @brief overuje ci program obsahuje definiciu main
  */
 int CheckMain(void) { return mainAlreadyDefined ? 0 : 3; }
+
+int GetFunctionSignature(const char *name, typeId *typeArr, const int arrSize, int *capacity,
+                         typeId *returnType) {
+    if (name == NULL || capacity == NULL || returnType == NULL)
+        return 99;
+    symbolData data;
+    if (!(LookupVar(rootTable, name, &data))) {
+        if (!(LookupFunction(rootTable, name, &data))) {
+            return 3;
+        }
+    }
+    if (data.type < TYPE_ID_BASE)
+        return 6;
+    if (data.type >= TYPE_ID_BASE + types.filledCount)
+        return 99;
+    int index = data.type - TYPE_ID_BASE;
+    funcType *signature = &types.functionTypes[index];
+    if (signature->paramCount > arrSize)
+        return 99;
+    if (signature->paramCount > 0 && typeArr == NULL)
+        return 99;
+    *capacity = signature->paramCount;
+    typeId retType = signature->returnId;
+
+    for (int i = 0; i < signature->paramCount; i++) {
+        typeArr[i] = signature->idParams[i];
+    }
+
+    switch (retType) {
+    case 0:
+        return 6;
+    case 1:
+        *returnType = TYPE_INT;
+        break;
+    case 2:
+        *returnType = TYPE_DOUBLE;
+        break;
+    case 3:
+        *returnType = TYPE_STRING;
+        break;
+    case 4:
+        *returnType = TYPE_BOOLEAN;
+        break;
+    case 5:
+        *returnType = TYPE_UNIT;
+        break;
+    case 6:
+        *returnType = TYPE_ANY;
+        break;
+    default:
+        *returnType = retType;
+        break;
+    }
+    return 0;
+}
