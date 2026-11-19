@@ -85,7 +85,8 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit);
 static int Loop(Parser *parser);
 static int IfRest(Parser *parser, bool *allReturn, bool *allUnit);
 static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit);
-static int CallArgs(Parser *parser, typeId *argTypes, int *argCount);
+static int CallArgs(Parser *parser, typeId *argTypes, int *argCount, const typeId *sigTypes,
+                    int sigCount);
 static int MemberAccess(Parser *parser, typeId *type);
 static int CloseStatement(Parser *parser);
 static void BranchEnd(Parser *parser, bool *endsReturn, bool *endsUnit);
@@ -1117,6 +1118,9 @@ static int Expr(Parser *parser, typeId *outType) {
     item.type = ITEM_TERM;
     item.symbol = PREC_DOLLAR;
     item.valType = TYPE_UNDEFINED;
+    typeId sigTypes[64];
+    int sigCount;
+    typeId sigRet;
     int result = StackPush(&stack, item);
     if (result != 0)
         return result;
@@ -1165,7 +1169,17 @@ static int Expr(Parser *parser, typeId *outType) {
                 return result;
             if (isIdent && Check(parser, TOKEN_LPAREN)) {
                 isCall = true;
-                result = CallArgs(parser, argTypes, &argCount);
+                sigCount = 0;
+                if (parser->genCode){
+                    int sig = GetFunctionSignature(tokName, sigTypes, 64, &sigCount, &sigRet);
+                    if (sig == 99){
+                       return 99; 
+                    }
+                    if(sig != 0){
+                        sigCount = 0;
+                    }
+                }
+                result = CallArgs(parser, argTypes, &argCount, sigTypes, sigCount);
                 if (result != 0)
                     return result;
             } else {
@@ -1304,9 +1318,12 @@ static int Expr(Parser *parser, typeId *outType) {
  * @param parser stav parsera s aktualnym tokenom
  * @param argTypes pole na zapisanie typov argumentov
  * @param argCount adresa kam sa zapise pocet argumentov
+ * @param sigTypes adresa pola typov parametrov funckie
+ * @param sigCount pocet parametrov funkcie
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int CallArgs(Parser *parser, typeId *argTypes, int *argCount) {
+static int CallArgs(Parser *parser, typeId *argTypes, int *argCount, const typeId *sigTypes,
+                    int sigCount) {
     *argCount = 0;
     int result = Expect(parser, TOKEN_LPAREN);
     if (result != 0)
@@ -1323,6 +1340,12 @@ static int CallArgs(Parser *parser, typeId *argTypes, int *argCount) {
         result = Expr(parser, &exprType);
         if (result != 0)
             return result;
+        if (parser->genCode && *argCount < sigCount && sigTypes[*argCount] == TYPE_DOUBLE &&
+            exprType == TYPE_INT) {
+            result = GenInt2FloatTop(parser->cg);
+            if (result != 0)
+                return result;
+        }
 
         if (*argCount == 64) {
             return 99;
