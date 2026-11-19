@@ -1808,6 +1808,15 @@ static int SimpleStmt(Parser *parser) {
         if (result != 0)
             return result;
         if (parser->genCode) {
+            typeId varType;
+            result = GetVarType(name, &varType);
+            if (result != 0)
+                return result;
+            if (varType == TYPE_DOUBLE && valueType == TYPE_INT) {
+                result = GenInt2FloatTop(parser->cg);
+                if (result != 0)
+                    return result;
+            }
             result = GenPopToVar(parser->cg, name);
             if (result != 0)
                 return result;
@@ -1869,6 +1878,12 @@ static int DefVar(Parser *parser) {
             result = GenDefVar(parser->cg, name);
             if (result != 0)
                 return result;
+
+            if (hasType && type == TYPE_DOUBLE && initType == TYPE_INT) {
+                result = GenInt2FloatTop(parser->cg);
+                if (result != 0)
+                    return result;
+            }
 
             result = GenPopToVar(parser->cg, name);
             if (result != 0)
