@@ -6,8 +6,10 @@
  */
 
 #include "parser.h"
+#include "../codegen.h"
 #include "../semantic.h"
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -43,6 +45,10 @@ typedef struct {
     bool lastIfAllReturn;       ///< ci vsetky vetvy posledneho if koncia returnom
     bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
     bool inferPass;             ///< ci prave bezi inferencny prechod
+    codeGen *cg;                ///< pointer na generator kodu
+    bool genCode;   ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny
+                    ///< prechod)
+    bool isMainFun; ///< ci prave spracuvame funckiu main
 } Parser;
 
 static int Advance(Parser *parser);
@@ -885,12 +891,61 @@ static TokenType PrecToToken(enum PrecSymbol s) {
 }
 
 /**
+ * @brief Prevod symbolu operatora z tabulky na znak operatora
+ * @param s precedencny symbol operatora
+ * @return znak operatora
+ */
+static char PrecToGenOp(enum PrecSymbol s) {
+    switch (s) {
+    case PREC_MUL:
+        return '*';
+
+    case PREC_DIV:
+        return '/';
+
+    case PREC_PLUS:
+        return '+';
+
+    case PREC_MINUS:
+        return '-';
+
+    case PREC_LT:
+        return '<';
+
+    case PREC_LTE:
+        return 'L';
+
+    case PREC_GT:
+        return '>';
+
+    case PREC_GTE:
+        return 'G';
+
+    case PREC_EQ:
+        return '=';
+
+    case PREC_NEQ:
+        return '!';
+
+    case PREC_AND:
+        return '&';
+
+    case PREC_OR:
+        return '|';
+
+    default:
+        return 0;
+    }
+}
+
+/**
  * @brief Nahradi usek od poslednej znacky jednym E podla pravidiel (i, !E, -E, (), E op E, (E))
+ * @param parser stav parsera s aktualnym tokenom
  * @param stack pointer na zasobnik
  * @return 0 ak OK, 2 ak usek nezodpoveda ziadnemu pravidlu, 99 plny zasobnik,
  * inak kod semantickej chyby
  */
-static int StackReduce(PrecStack *stack) {
+static int StackReduce(Parser *parser, PrecStack *stack) {
     int mark = -1;
     for (int i = stack->top - 1; i >= 0; i--) {
         if (stack->FieldOfItems[i].type == ITEM_MARK) {
@@ -924,12 +979,28 @@ static int StackReduce(PrecStack *stack) {
         result = Operator(b->valType, TYPE_UNDEFINED, PrecToToken(a->symbol), &newType);
         if (result != 0)
             return result;
+        if (parser->genCode) {
+            if (a->symbol == PREC_UMINUS) {
+                result = GenUnaryMinus(parser->cg, b->valType == TYPE_DOUBLE);
+                if (result != 0)
+                    return result;
+            } else {
+                result = GenNot(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+        }
     }
 
     if (count == 2 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_TERM &&
         b->symbol == PREC_RPAREN) {
         ok = true;
         newType = TYPE_UNIT;
+        if (parser->genCode) {
+            result = GenPushUnit(parser->cg);
+            if (result != 0)
+                return result;
+        }
     }
 
     if (count == 3 && a->type == ITEM_NONTERM && b->type == ITEM_TERM && b->symbol >= PREC_MUL &&
@@ -938,6 +1009,22 @@ static int StackReduce(PrecStack *stack) {
         result = Operator(a->valType, c->valType, PrecToToken(b->symbol), &newType);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            if (a->valType == TYPE_INT && c->valType == TYPE_DOUBLE) {
+                result = GenInt2FloatSecond(parser->cg);
+                if (result != 0)
+                    return result;
+            } else if (a->valType == TYPE_DOUBLE && c->valType == TYPE_INT) {
+                result = GenInt2FloatTop(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+            result = GenBinaryOp(parser->cg, PrecToGenOp(b->symbol), a->valType == TYPE_STRING,
+                                 a->valType == TYPE_INT && c->valType == TYPE_INT);
+            if (result != 0)
+                return result;
+        }
     }
 
     if (count == 3 && a->type == ITEM_TERM && a->symbol == PREC_LPAREN && b->type == ITEM_NONTERM &&
@@ -977,9 +1064,29 @@ static int MemberAccess(Parser *parser, typeId *type) {
         if (result != 0)
             return result;
 
+        typeId before = *type;
+
         result = ValmemMember(*type, member, type);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            if (strcmp(member, "toString") == 0) {
+                char kind = 'i';
+                if (before == TYPE_STRING) {
+                    kind = 's';
+                } else if (before == TYPE_DOUBLE) {
+                    kind = 'f';
+                }
+                result = GenBuiltinToStr(parser->cg, kind);
+            } else if (strcmp(member, "toInt") == 0) {
+                result = GenBuiltinToInt(parser->cg);
+            } else if (strcmp(member, "length") == 0) {
+                result = GenBuiltinStrLength(parser->cg);
+            }
+            if (result != 0)
+                return result;
+        }
     }
     return 0;
 }
@@ -1088,6 +1195,56 @@ static int Expr(Parser *parser, typeId *outType) {
                             return result;
                     }
                 }
+
+                if (parser->genCode) {
+                    result = 0;
+                    if (tokType == TOKEN_INT_LITERAL) {
+                        result = GenPushInt(parser->cg, strtoll(tokName, NULL, 10));
+                    } else if (tokType == TOKEN_DOUBLE_LITERAL) {
+                        result = GenPushFloat(parser->cg, strtod(tokName, NULL));
+                    } else if (tokType == TOKEN_STRING_LITERAL) {
+                        result = GenPushString(parser->cg, tokName);
+                    } else if (tokType == TOKEN_TRUE_LITERAL) {
+                        result = GenPushBool(parser->cg, true);
+                    } else if (tokType == TOKEN_FALSE_LITERAL) {
+                        result = GenPushBool(parser->cg, false);
+                    } else if (tokType == TOKEN_UNIT_LITERAL) {
+                        result = GenPushUnit(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && !isCall) {
+                        result = GenPushVar(parser->cg, tokName);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "print") == 0) {
+                        result = GenBuiltinPrint(parser->cg, argTypes[0] == TYPE_UNIT, true);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readInt") == 0) {
+                        result = GenBuiltinReadInt(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readDouble") == 0) {
+                        result = GenBuiltinReadDouble(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readLine") == 0) {
+                        result = GenBuiltinReadString(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toInt") == 0) {
+                        result = GenBuiltinToInt(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "strLength") == 0) {
+                        result = GenBuiltinStrLength(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "chr") == 0) {
+                        result = GenBuiltinChr(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toStr") == 0) {
+                        char kind = 'i';
+                        if (argTypes[0] == TYPE_DOUBLE) {
+                            kind = 'f';
+                        } else if (argTypes[0] == TYPE_STRING) {
+                            kind = 's';
+                        }
+                        result = GenBuiltinToStr(parser->cg, kind);
+                    } else if (tokType == TOKEN_IDENT && isCall) {
+                        result = GenCall(parser->cg, tokName);
+                    }
+                    if (result != 0)
+                        return result;
+                }
+
                 result = MemberAccess(parser, &opType);
                 if (result != 0)
                     return result;
@@ -1125,7 +1282,7 @@ static int Expr(Parser *parser, typeId *outType) {
             break;
 
         case '>':
-            result = StackReduce(&stack);
+            result = StackReduce(parser, &stack);
             if (result != 0)
                 return result;
             break;
@@ -1235,6 +1392,12 @@ static int CloseStatement(Parser *parser) {
         int result = StatementValueType(parser->lastComType);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            result = GenPopDiscard(parser->cg);
+            if (result != 0)
+                return result;
+        }
     }
     parser->lastKind = STMT_NONE;
     return 0;
@@ -1391,6 +1554,12 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenIfStart(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     result = Expect(parser, TOKEN_THEN);
     if (result != 0)
         return result;
@@ -1402,6 +1571,12 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit) {
     result = EnterBlock();
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenScopeEnter(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     result = FunBody(parser);
     if (result != 0)
@@ -1417,9 +1592,25 @@ static int If(Parser *parser, bool *allReturn, bool *allUnit) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenScopeExit(parser->cg);
+        if (result != 0)
+            return result;
+
+        result = GenIfElse(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     result = IfRest(parser, &restReturn, &restUnit);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenIfEnd(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     *allReturn = thenReturn && restReturn;
     *allUnit = thenUnit && restUnit;
@@ -1437,6 +1628,12 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenWhileStart(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     typeId exprType;
     result = Expr(parser, &exprType);
     if (result != 0)
@@ -1445,6 +1642,12 @@ static int Loop(Parser *parser) {
     result = ConditionType(exprType);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenWhileCond(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     result = Expect(parser, TOKEN_DO);
     if (result != 0)
@@ -1458,6 +1661,12 @@ static int Loop(Parser *parser) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenScopeEnter(parser->cg);
+        if (result != 0)
+            return result;
+    }
+
     result = FunBody(parser);
     if (result != 0)
         return result;
@@ -1469,6 +1678,16 @@ static int Loop(Parser *parser) {
     result = LeaveBlock();
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenScopeExit(parser->cg);
+        if (result != 0)
+            return result;
+
+        result = GenWhileEnd(parser->cg);
+        if (result != 0)
+            return result;
+    }
 
     return result;
 }
@@ -1515,6 +1734,12 @@ static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit) {
         if (result != 0)
             return result;
 
+        if (parser->genCode) {
+            result = GenScopeEnter(parser->cg);
+            if (result != 0)
+                return result;
+        }
+
         result = FunBody(parser);
         if (result != 0)
             return result;
@@ -1528,6 +1753,12 @@ static int ElseRest(Parser *parser, bool *allReturn, bool *allUnit) {
         result = LeaveBlock();
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            result = GenScopeExit(parser->cg);
+            if (result != 0)
+                return result;
+        }
 
         return result;
     } else if (Check(parser, TOKEN_IF)) {
@@ -1585,6 +1816,17 @@ static int SimpleStmt(Parser *parser) {
             result = AssignValueToVar(name, valueType);
             if (result != 0)
                 return result;
+
+            if (parser->genCode) {
+                result = GenPopToVar(parser->cg, name);
+                if (result != 0)
+                    return result;
+
+                result = GenPopDiscard(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+
             parser->lastKind = STMT_UNIT;
         } else {
             parser->lastKind = STMT_EXPR;
@@ -1628,6 +1870,16 @@ static int DefVar(Parser *parser) {
         result = DeclareVar(name, hasType, type, isConst, initType);
         if (result != 0)
             return result;
+
+        if (parser->genCode) {
+            result = GenDefVar(parser->cg, name);
+            if (result != 0)
+                return result;
+
+            result = GenPopToVar(parser->cg, name);
+            if (result != 0)
+                return result;
+        }
 
         return result;
     } else {
@@ -1693,7 +1945,14 @@ static int RetStmt(Parser *parser) {
 
     if (Check(parser, TOKEN_EOL) || Check(parser, TOKEN_SEMICOLON)) {
         result = Return(false, TYPE_UNDEFINED);
-        return result;
+        if (result != 0)
+            return result;
+        if (parser->genCode) {
+            result = GenReturn(parser->cg, false, parser->isMainFun);
+            if (result != 0)
+                return result;
+        }
+        return 0;
     } else {
         typeId exprType;
         result = Expr(parser, &exprType);
@@ -1702,6 +1961,11 @@ static int RetStmt(Parser *parser) {
         result = Return(true, exprType);
         if (result != 0)
             return result;
+        if (parser->genCode) {
+            result = GenReturn(parser->cg, true, parser->isMainFun);
+            if (result != 0)
+                return result;
+        }
 
         return result;
     }
@@ -1745,6 +2009,17 @@ static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasR
         FuncBodyStart(name, parser->paramNames, parser->paramTypes, parser->paramCount, isMain);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        parser->isMainFun = isMain;
+        result = GenFunStart(parser->cg, name, isMain);
+        if (result != 0)
+            return result;
+
+        result = GenFuncParams(parser->cg, parser->paramNames, parser->paramCount);
+        if (result != 0)
+            return result;
+    }
 
     parser->lastKind = STMT_NONE;
 
@@ -1795,6 +2070,12 @@ static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasR
     result = FuncBodyEnd(hasResult, resultType);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenFunEnd(parser->cg, isMain, parser->lastKind == STMT_EXPR);
+        if (result != 0)
+            return result;
+    }
 
     return 0;
 }
@@ -1923,6 +2204,13 @@ static int Program(Parser *parser) {
     if (result != 0)
         return result;
 
+    if (parser->genCode) {
+        result = GenProlog(parser->cg);
+        if (result != 0) {
+            return result;
+        }
+    }
+
     result = FunList(parser);
     if (result != 0)
         return result;
@@ -1945,6 +2233,7 @@ static int Program(Parser *parser) {
  */
 int Parse(Lexer *lexer) {
     Parser parser;
+    codeGen cg;
     parser.tokenCount = 0;
     parser.lexer = lexer;
     parser.prevLine = 0;
@@ -1957,13 +2246,22 @@ int Parse(Lexer *lexer) {
     parser.lastIfAllReturn = false;
     parser.lastIfAllUnit = false;
     parser.inferPass = false;
+    parser.isMainFun = false;
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
+    result = CodeGenInit(&cg);
+    if (result != 0) {
+        SemAnalysisFree();
+        return result;
+    }
+    parser.cg = &cg;
+    parser.genCode = false;
     result = FillBuffer(&parser);
     if (result != 0) {
         FreeBuffer(&parser);
         SemAnalysisFree();
+        CodeGenFree(&cg);
         return result;
     }
     parser.current = parser.fieldOfTokens[0];
@@ -1971,6 +2269,7 @@ int Parse(Lexer *lexer) {
     if (result != 0) {
         FreeBuffer(&parser);
         SemAnalysisFree();
+        CodeGenFree(&cg);
         return result;
     }
     int before;
@@ -1983,6 +2282,7 @@ int Parse(Lexer *lexer) {
         if (result == 99) {
             FreeBuffer(&parser);
             SemAnalysisFree();
+            CodeGenFree(&cg);
             return 99;
         }
 
@@ -1992,13 +2292,19 @@ int Parse(Lexer *lexer) {
     if (result != 0) {
         FreeBuffer(&parser);
         SemAnalysisFree();
+        CodeGenFree(&cg);
         return result;
     }
 
+    parser.genCode = true;
     parser.inferPass = false;
     ResetParserPosition(&parser);
     result = Program(&parser);
+    if (result == 0) {
+        fputs(cg.out.data, stdout);
+    }
     FreeBuffer(&parser);
     SemAnalysisFree();
+    CodeGenFree(&cg);
     return result;
 }
