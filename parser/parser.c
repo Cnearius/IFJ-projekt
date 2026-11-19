@@ -77,7 +77,8 @@ static int SimpleLineRest(Parser *parser);
 static int BlockStmt(Parser *parser);
 static int SimpleStmt(Parser *parser);
 static int DefVar(Parser *parser);
-static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType);
+static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType,
+                   const char **initName, bool *initIsBareIdent);
 static int RetStmt(Parser *parser);
 static int AssignAfter(Parser *parser, typeId *valueType);
 static int If(Parser *parser, bool *allReturn, bool *allUnit);
@@ -1212,7 +1213,11 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_UNIT_LITERAL) {
                         result = GenPushUnit(parser->cg);
                     } else if (tokType == TOKEN_IDENT && !isCall) {
-                        result = GenPushVar(parser->cg, tokName);
+                        // meno funkcie bez volania nie je premenna, chybu nahlasi DeclareVar
+                        if (opType == TYPE_INT || opType == TYPE_DOUBLE || opType == TYPE_STRING ||
+                            opType == TYPE_BOOLEAN || opType == TYPE_UNIT) {
+                            result = GenPushVar(parser->cg, tokName);
+                        }
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "print") == 0) {
                         result = GenBuiltinPrint(parser->cg, argTypes[0] == TYPE_UNIT, true);
                     } else if (tokType == TOKEN_IDENT && isCall &&
@@ -1846,6 +1851,8 @@ static int SimpleStmt(Parser *parser) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int DefVar(Parser *parser) {
+    const char *initName = NULL;
+    bool initIsBareIdent = false;
     if (Check(parser, TOKEN_VAL) || Check(parser, TOKEN_VAR)) {
         typeId initType;
         bool isConst;
@@ -1867,9 +1874,11 @@ static int DefVar(Parser *parser) {
         if (result != 0)
             return result;
 
-        result = VarRest(parser, &hasType, &type, &initType);
+        result = VarRest(parser, &hasType, &type, &initType, &initName, &initIsBareIdent);
         if (result != 0)
             return result;
+
+        SetVarInitInfo(initName, initIsBareIdent);
 
         result = DeclareVar(name, hasType, type, isConst, initType);
         if (result != 0)
@@ -1903,9 +1912,12 @@ static int DefVar(Parser *parser) {
  * @param hasType adresa kam sa zapise ci ma premenna uvedeny typ
  * @param type adresa kam sa zapise uvedeny typ
  * @param initType adresa kam sa zapise typ inicializovaneho vyrazu
+ * @param initName adresa kam sa zapise meno inicializatora ak zacina identifikatorom
+ * @param initIsBareIdent adresa kam sa zapise ci bol inicializator jediny identifikator
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType) {
+static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType,
+                   const char **initName, bool *initIsBareIdent) {
     if (Check(parser, TOKEN_COLON)) {
 
         *hasType = true;
@@ -1935,9 +1947,19 @@ static int VarRest(Parser *parser, bool *hasType, typeId *type, typeId *initType
         if (result != 0)
             return result;
 
+        size_t before = parser->tokenCount;
+        bool startsIdent = Check(parser, TOKEN_IDENT);
+        const char *nameLocal = NULL;
+        if (startsIdent) {
+            nameLocal = parser->current.value;
+        }
+
         result = Expr(parser, initType);
         if (result != 0)
             return result;
+
+        *initName = nameLocal;
+        *initIsBareIdent = startsIdent && parser->tokenCount - before == 1;
 
         return result;
     }
