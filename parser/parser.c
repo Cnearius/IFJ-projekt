@@ -1657,6 +1657,16 @@ static int DefVar(Parser *parser) {
         if (result != 0)
             return result;
 
+        if (parser->genCode) {
+            result = GenDefVar(parser->cg, name);
+            if (result != 0)
+                return result;
+            
+            result = GenPopToVar(parser->cg, name);
+            if (result != 0)
+                return result;
+        }
+
         return result;
     } else {
         return 2;
