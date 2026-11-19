@@ -6,12 +6,12 @@
  */
 
 #include "parser.h"
+#include "../codegen.h"
 #include "../semantic.h"
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../codegen.h"
-#include <stdio.h>
 
 /**
  * @brief enum na druh posledneho prikazu
@@ -46,7 +46,9 @@ typedef struct {
     bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
     bool inferPass;             ///< ci prave bezi inferencny prechod
     codeGen *cg;                ///< pointer na generator kodu
-    bool genCode;               ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny prechod)
+    bool genCode;   ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny
+                    ///< prechod)
+    bool isMainFun; ///< ci prave spracuvame funckiu main
 } Parser;
 
 static int Advance(Parser *parser);
@@ -1092,6 +1094,28 @@ static int Expr(Parser *parser, typeId *outType) {
                             return result;
                     }
                 }
+
+                if (parser->genCode) {
+                    result = 0;
+                    if (tokType == TOKEN_INT_LITERAL) {
+                        result = GenPushInt(parser->cg, strtoll(tokName, NULL, 10));
+                    } else if (tokType == TOKEN_DOUBLE_LITERAL) {
+                        result = GenPushFloat(parser->cg, strtod(tokName, NULL));
+                    } else if (tokType == TOKEN_TRUE_LITERAL) {
+                        result = GenPushBool(parser->cg, true);
+                    } else if (tokType == TOKEN_FALSE_LITERAL) {
+                        result = GenPushBool(parser->cg, false);
+                    } else if (tokType == TOKEN_UNIT_LITERAL) {
+                        result = GenPushUnit(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && !isCall) {
+                        result = GenPushVar(parser->cg, tokName);
+                    } else if (tokType == TOKEN_IDENT && isCall) {
+                        result = GenCall(parser->cg, tokName);
+                    }
+                    if (result != 0)
+                        return result;
+                }
+
                 result = MemberAccess(parser, &opType);
                 if (result != 0)
                     return result;
@@ -1697,7 +1721,14 @@ static int RetStmt(Parser *parser) {
 
     if (Check(parser, TOKEN_EOL) || Check(parser, TOKEN_SEMICOLON)) {
         result = Return(false, TYPE_UNDEFINED);
-        return result;
+        if (result != 0)
+            return result;
+        if (parser->genCode) {
+            result = GenReturn(parser->cg, false, parser->isMainFun);
+            if (result != 0)
+                return result;
+        }
+        return 0;
     } else {
         typeId exprType;
         result = Expr(parser, &exprType);
@@ -1706,6 +1737,11 @@ static int RetStmt(Parser *parser) {
         result = Return(true, exprType);
         if (result != 0)
             return result;
+        if (parser->genCode) {
+            result = GenReturn(parser->cg, true, parser->isMainFun);
+            if (result != 0)
+                return result;
+        }
 
         return result;
     }
@@ -1749,6 +1785,17 @@ static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasR
         FuncBodyStart(name, parser->paramNames, parser->paramTypes, parser->paramCount, isMain);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        parser->isMainFun = isMain;
+        result = GenFunStart(parser->cg, name, isMain);
+        if (result != 0)
+            return result;
+
+        result = GenFuncParams(parser->cg, parser->paramNames, parser->paramCount);
+        if (result != 0)
+            return result;
+    }
 
     parser->lastKind = STMT_NONE;
 
@@ -1799,6 +1846,12 @@ static int FunBodyCheck(Parser *parser, const char *name, bool isMain, bool hasR
     result = FuncBodyEnd(hasResult, resultType);
     if (result != 0)
         return result;
+
+    if (parser->genCode) {
+        result = GenFunEnd(parser->cg, isMain, parser->lastKind == STMT_EXPR);
+        if (result != 0)
+            return result;
+    }
 
     return 0;
 }
@@ -1926,10 +1979,10 @@ static int Program(Parser *parser) {
     result = Expect(parser, TOKEN_EOL);
     if (result != 0)
         return result;
-    
-    if(parser->genCode){
+
+    if (parser->genCode) {
         result = GenProlog(parser->cg);
-        if(result != 0){
+        if (result != 0) {
             return result;
         }
     }
@@ -1969,11 +2022,12 @@ int Parse(Lexer *lexer) {
     parser.lastIfAllReturn = false;
     parser.lastIfAllUnit = false;
     parser.inferPass = false;
+    parser.isMainFun = false;
     int result = SemAnalysisInit();
     if (result != 0)
         return result;
     result = CodeGenInit(&cg);
-    if(result != 0){
+    if (result != 0) {
         SemAnalysisFree();
         return result;
     }
@@ -2022,7 +2076,7 @@ int Parse(Lexer *lexer) {
     parser.inferPass = false;
     ResetParserPosition(&parser);
     result = Program(&parser);
-    if(result == 0){
+    if (result == 0) {
         fputs(cg.out.data, stdout);
     }
     FreeBuffer(&parser);
