@@ -1122,6 +1122,29 @@ static int MemberAccess(Parser *parser, typeId *type) {
 }
 
 /**
+ * @brief Posle nazbierany text na zasobnik a prilepi ho
+ * @param parser stav parsera s aktualnym tokenom
+ * @param piece pointer na alokovanu pamet pre kusok
+ * @param len pointer na pocet znakov nazbieranych v piece
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FlushPiece(Parser *parser, char *piece, size_t *len) {
+    if (*len > 0 && parser->genCode) {
+        piece[*len] = '\0';
+        int result = GenPushString(parser->cg, piece);
+        if (result != 0) {
+            return result;
+        }
+        result = GenBinaryOp(parser->cg, '+', true, false);
+        if (result != 0) {
+            return result;
+        }
+    }
+    *len = 0;
+    return 0;
+}
+
+/**
  * @brief spracuje interpolovany retazec s "..." a vygeneruje spajanie jeho kusov (INTERPOLATED)
  * @param parser stav parsera s aktualnym tokenom
  * @param text text
@@ -1152,18 +1175,10 @@ static int InterpString(Parser *parser, const char *text) {
             len++;
         }
     }
-    if (len > 0 && parser->genCode) {
-        piece[len] = '\0';
-        int result = GenPushString(parser->cg, piece);
-        if (result != 0) {
-            free(piece);
-            return result;
-        }
-        result = GenBinaryOp(parser->cg, '+', true, false);
-        if (result != 0) {
-            free(piece);
-            return result;
-        }
+    int result = FlushPiece(parser, piece, &len);
+    if (result != 0) {
+        free(piece);
+        return result;
     }
     free(piece);
     return 0;
