@@ -24,6 +24,8 @@ typedef struct tSymTableItem {
     symbolData data;
 } symTableItem;
 
+typedef enum { LAMBDA, CLASSIC } scopeType;
+
 struct tSymTable {
     symTableItem *items;
     size_t capacity;
@@ -31,6 +33,7 @@ struct tSymTable {
     size_t tombstoneCount;
     struct tSymTable *parent;
     symTable *top;
+    scopeType scope;
 };
 
 /**
@@ -165,6 +168,7 @@ symTable *InitTable(size_t initCapacity) {
     table->tombstoneCount = 0;
     table->parent = NULL;
     table->top = table;
+    table->scope = CLASSIC;
 
     table->items = calloc(primeCapacity, sizeof(symTableItem));
     if (table->items == NULL) {
@@ -351,6 +355,24 @@ bool PushScope(symTable *table) {
     if (child == NULL)
         return false;
     child->parent = table->top;
+    child->scope = CLASSIC;
+    table->top = child;
+    return true;
+}
+
+/**
+ * @param table tabulka
+ * @return true v pripade uspechu, inak false
+ * @brief funkcia pre push scopu pri lambda funkciach
+ */
+bool PushLambdaScope(symTable *table) {
+    if (table == NULL)
+        return false;
+    symTable *child = InitTable(23);
+    if (child == NULL)
+        return false;
+    child->parent = table->top;
+    child->scope = LAMBDA;
     table->top = child;
     return true;
 }
@@ -397,7 +419,8 @@ bool InsertLocal(symTable *table, const char *key, symbolData data) {
  * @param key hladany kluc
  * @param out ukazovatel kam sa ulozi najdena hodnota
  * @return true ak sa premenna nasla, inak false
- * @brief vyhladava premennu od vrchu sasobnika po parentoch az kym nenajde prvy
+ * @brief vyhladava premennu od vrchu sasobnika po parentoch az kym nenajde prvy a ked je to lambda scope tak sa na 
+ * konci vyhladavanie zastavi
  */
 bool LookupVar(symTable *table, const char *key, symbolData *out) {
     if (table == NULL)
@@ -408,6 +431,8 @@ bool LookupVar(symTable *table, const char *key, symbolData *out) {
     while (stackTop->parent != NULL) {
         if (SearchItem(stackTop, key, out))
             return true;
+        if (stackTop->scope == LAMBDA)
+            break;
         stackTop = stackTop->parent;
     }
     return false;

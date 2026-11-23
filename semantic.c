@@ -42,6 +42,12 @@ typedef struct {
     bool hasExplicitReturn;
 } functionInfo;
 
+typedef struct {
+    typeId *paramTypes;
+    int paramCount;
+    int savedBlockDepth;
+} lambdaFrame;
+
 static typeStore types;
 static symTable *rootTable;
 static bool mainAlreadyDefined;
@@ -53,6 +59,10 @@ static functionInfo *functionList;
 static int functionCount;
 static int functionCapacity;
 static bool pendingInitIsFunctionRef = false;
+static lambdaFrame *lambdaFrames;
+static int lambdaFrameCount;
+static int lambdaFrameCapacity;
+static int bodyLambdaCount;
 
 /**
  * @param types  ukazovatel na struct types
@@ -177,6 +187,10 @@ int AbortFuncBody(void) {
         }
         blockDepth--;
     }
+    while (lambdaFrameCount > bodyLambdaCount) {
+        lambdaFrameCount--;
+        free(lambdaFrames[lambdaFrameCount].paramTypes);
+    }
     if (result == 0 && !PopScope(rootTable))
         result = 99;
     free(currentFn.name);
@@ -284,6 +298,11 @@ int ResetSemAnalysisForFinalAnalysis(void) {
     }
     blockDepth = 0;
     bodyBlockDepth = 0;
+    while (lambdaFrameCount > 0) {
+        lambdaFrameCount--;
+        free(lambdaFrames[lambdaFrameCount].paramTypes);
+    }
+    bodyLambdaCount = 0;
 
     for (int i = 0; i < functionCount; i++) {
         symbolData data;
@@ -405,6 +424,7 @@ int SemAnalysisInit(void) {
     mainAlreadyDefined = false;
     blockDepth = 0;
     bodyBlockDepth = 0;
+    bodyLambdaCount = 0;
     return 0;
 }
 
@@ -426,6 +446,14 @@ void SemAnalysisFree(void) {
     SemInferMode(false);
     blockDepth = 0;
     bodyBlockDepth = 0;
+
+    for (int i = 0; i < lambdaFrameCount; i++)
+        free(lambdaFrames[i].paramTypes);
+    free(lambdaFrames);
+    lambdaFrames = NULL;
+    lambdaFrameCount = 0;
+    lambdaFrameCapacity = 0;
+    bodyLambdaCount = 0;
 
     for (int i = 0; i < functionCount; i++)
         free(functionList[i].name);
@@ -787,7 +815,120 @@ int FuncBodyStart(const char *name, const char **paramNames, const typeId *param
     currentFn.isMain = isMain;
     currentFn.sawReturn = false;
     bodyBlockDepth = blockDepth;
+    bodyLambdaCount = lambdaFrameCount;
     return 0;
+}
+
+/**
+ * @return true pri uspechu, false pri zlyhani alokacie
+ * @brief zvacsi pole lambda framov a pri zlyhani ostava pole aj kapacita bez zmeny
+ */
+static bool IncreaseLambdaFrameStore(void) {
+    int newCapacity = lambdaFrameCapacity == 0 ? 8 : lambdaFrameCapacity * 2;
+    lambdaFrame *newFrames = realloc(lambdaFrames, (size_t)newCapacity * sizeof(lambdaFrame));
+    if (newFrames == NULL)
+        return false;
+    lambdaFrames = newFrames;
+    lambdaFrameCapacity = newCapacity;
+    return true;
+}
+
+/**
+ * @param paramNames mena parametrov lambda funkcie
+ * @param paramTypes typy parametrov lambda funkcie
+ * @param paramCount pocet parametrov lambda funkcie
+ * @return 99 pri internej chybe alebo neplatnych vstupoch
+ * @return 4 pri duplikate parametra
+ * @return 0 pri uspechu
+ * @brief otvori izolovany scope lambda funkcie, vlozi parametre ako konstanty
+ * a zapamata si ich typy pre neskorise poskladanie funkcneho typu
+ */
+int LambdaBodyStart(const char **paramNames, const typeId *paramTypes, int paramCount) {
+    if (paramCount < 0)
+        return 99;
+    if (paramCount > 0 && (paramNames == NULL || paramTypes == NULL))
+        return 99;
+    if (rootTable == NULL)
+        return 99;
+    for (int i = 0; i < paramCount; i++) {
+        if (paramNames[i] == NULL || paramTypes[i] == TYPE_UNDEFINED)
+            return 99;
+    }
+    if (lambdaFrameCount == lambdaFrameCapacity) {
+        if (!IncreaseLambdaFrameStore())
+            return 99;
+    }
+
+    typeId *typeCopy = NULL;
+    if (paramCount > 0) {
+        typeCopy = malloc((size_t)paramCount * sizeof(typeId));
+        if (typeCopy == NULL)
+            return 99;
+        memcpy(typeCopy, paramTypes, (size_t)paramCount * sizeof(typeId));
+    }
+    if (!PushLambdaScope(rootTable)) {
+        free(typeCopy);
+        return 99;
+    }
+
+    int savedBlockDepth = blockDepth;
+    lambdaFrames[lambdaFrameCount].paramTypes = typeCopy;
+    lambdaFrames[lambdaFrameCount].paramCount = paramCount;
+    lambdaFrames[lambdaFrameCount].savedBlockDepth = savedBlockDepth;
+    lambdaFrameCount++;
+    blockDepth++;
+
+    symbolData paramData;
+    paramData.isConst = true;
+    paramData.isDefined = true;
+    paramData.isFunction = false;
+    paramData.paramCount = 0;
+    for (int i = 0; i < paramCount; i++) {
+        paramData.type = paramTypes[i];
+        if (!InsertLocal(rootTable, paramNames[i], paramData)) {
+            PopScope(rootTable);
+            blockDepth = savedBlockDepth;
+            lambdaFrameCount--;
+            free(typeCopy);
+            return 4;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @param hasResult ci telo lambda funkcie vratilo hodnotu
+ * @param resultType typ vysledku tela, pouziva sa iba ked hasResult je true
+ * @param outType sem sa zapise funkcny typ lambda funkcie
+ * @return 99 pri internej chybe
+ * @return 6 ked je vysledok tela TYPE_UNDEFINED
+ * @return 0 pri uspechu
+ * @brief uzavrie izolovany scope lambda funkcie a posklada jej funkcny typ
+ */
+int LambdaBodyEnd(bool hasResult, typeId resultType, typeId *outType) {
+    if (outType == NULL || rootTable == NULL)
+        return 99;
+    *outType = TYPE_UNDEFINED;
+    if (lambdaFrameCount == 0)
+        return 99;
+    lambdaFrame *frame = &lambdaFrames[lambdaFrameCount - 1];
+    if (blockDepth != frame->savedBlockDepth + 1)
+        return 99;
+    if (!PopScope(rootTable))
+        return 99;
+    blockDepth--;
+
+    typeId *paramTypes = frame->paramTypes;
+    int paramCount = frame->paramCount;
+    lambdaFrameCount--;
+    if (hasResult && resultType == TYPE_UNDEFINED) {
+        free(paramTypes);
+        return 6;
+    }
+    typeId bodyType = hasResult ? resultType : TYPE_UNIT;
+    int result = FunctionType(paramTypes, paramCount, bodyType, outType);
+    free(paramTypes);
+    return result;
 }
 
 /**
@@ -853,6 +994,10 @@ int FuncBodyEnd(bool hasResult, typeId resultType) {
     bool sawReturn = currentFn.sawReturn;
 
     currentFn.name = NULL;
+    if (lambdaFrameCount != bodyLambdaCount) {
+        free(name);
+        return 99;
+    }
     if (!PopScope(rootTable)) {
         free(name);
         return 99;
@@ -1065,6 +1210,8 @@ int ValmemMember(typeId objType, const char *member, typeId *outType) {
  * @brief Overenie zvysku pravidiel pre return, ktore este neboli pokryte v FuncBodyEnd()
  */
 int Return(bool hasValue, typeId valueType) {
+    if (lambdaFrameCount > 0)
+        return 10;
     if (currentFn.name == NULL)
         return 99;
     currentFn.sawReturn = true;

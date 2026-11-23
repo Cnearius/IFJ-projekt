@@ -34,4 +34,5 @@ bool InsertLocal(symTable *table, const char *key, symbolData data);
 bool LookupVar(symTable *table, const char *key, symbolData *out);
 bool InsertFunction(symTable *table, const char *key, symbolData data);
 bool LookupFunction(symTable *table, const char *key, symbolData *out);
+bool PushLambdaScope(symTable *table);
 #endif
