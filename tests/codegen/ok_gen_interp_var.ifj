@@ -1,0 +1,14 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    val meno = "Matej"
+    val vek = 20
+    val d = 1.5
+    val b = true
+    print(s"Ahoj $meno, mas $vek rokov")
+    print("\n")
+    print(s"$d|$b|$meno")
+    print("\n")
+    print(s"cena $$$vek")

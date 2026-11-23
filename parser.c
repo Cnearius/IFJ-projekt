@@ -8,6 +8,7 @@
 #include "parser.h"
 #include "codegen.h"
 #include "semantic.h"
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1158,29 +1159,88 @@ static int InterpString(Parser *parser, const char *text) {
         return 99;
     }
 
+    char *name = malloc(strlen(text) + 1);
+
+    if (name == NULL) {
+        free(piece);
+        return 99;
+    }
+
+    int result = 0;
+
     if (parser->genCode) {
-        int result = GenPushString(parser->cg, "");
+        result = GenPushString(parser->cg, "");
         if (result != 0) {
             free(piece);
+            free(name);
             return result;
         }
     }
+
     for (size_t i = 0; i < strlen(text); i++) {
         if (text[i] == '$' && text[i + 1] == '$') {
             piece[len] = '$';
             len++;
             i++;
+        } else if (text[i] == '$' && (isalpha((unsigned char)text[i + 1]) || text[i + 1] == '_')) {
+            result = FlushPiece(parser, piece, &len);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            size_t j = i + 1;
+            size_t nameLen = 0;
+            while (isalnum((unsigned char)text[j]) || text[j] == '_') {
+                name[nameLen] = text[j];
+                nameLen++;
+                j++;
+            }
+            name[nameLen] = '\0';
+            typeId varType;
+            result = GetVarType(name, &varType);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            if (parser->genCode) {
+                result = GenPushVar(parser->cg, name);
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+
+                result = GenBuiltinToStr(parser->cg, KindOfType(varType));
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+
+                result = GenBinaryOp(parser->cg, '+', true, false);
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+            }
+            i = j - 1;
+
         } else {
             piece[len] = text[i];
             len++;
         }
     }
-    int result = FlushPiece(parser, piece, &len);
+    result = FlushPiece(parser, piece, &len);
     if (result != 0) {
         free(piece);
+        free(name);
         return result;
     }
     free(piece);
+    free(name);
     return 0;
 }
 
