@@ -1,0 +1,24 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+def say(s: String): Boolean =
+    print(s)
+    true
+
+@main def main(): Unit =
+    val a = false && say("X")
+    val b = true || say("Y")
+    val c = true && say("A")
+    val d = false || say("B")
+    print(toStr(a))
+    print(toStr(b))
+    print(toStr(c))
+    print(toStr(d))
+    print("\n")
+    val e = 1 < 2 && 3 > 2 || false
+    print(toStr(e))
+    print("\n")
+    print(toStr(1 + 2))
+    print("ab" + "cd")
+    print(toStr(1 + 2.5))

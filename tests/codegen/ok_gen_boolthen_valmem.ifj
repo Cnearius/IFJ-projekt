@@ -1,0 +1,18 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    print(toStr(true))
+    print(toStr(()))
+    val b = false
+    print(b.toString)
+    print("\n")
+    val d = 3.7
+    print(d.floor)
+    print("\n")
+    val e = -3.2
+    print(e.floor)
+    print("\n")
+    val n = readBoolean()
+    print(n)

@@ -1014,19 +1014,30 @@ static int StackReduce(Parser *parser, PrecStack *stack) {
             return result;
 
         if (parser->genCode) {
-            if (a->valType == TYPE_INT && c->valType == TYPE_DOUBLE) {
-                result = GenInt2FloatSecond(parser->cg);
+            if (b->symbol == PREC_AND) {
+                result = GenAndEnd(parser->cg);
                 if (result != 0)
                     return result;
-            } else if (a->valType == TYPE_DOUBLE && c->valType == TYPE_INT) {
-                result = GenInt2FloatTop(parser->cg);
+            } else if (b->symbol == PREC_OR) {
+                result = GenOrEnd(parser->cg);
+                if (result != 0)
+                    return result;
+            } else {
+                if (a->valType == TYPE_INT && c->valType == TYPE_DOUBLE) {
+                    result = GenInt2FloatSecond(parser->cg);
+                    if (result != 0)
+                        return result;
+                } else if (a->valType == TYPE_DOUBLE && c->valType == TYPE_INT) {
+                    result = GenInt2FloatTop(parser->cg);
+                    if (result != 0)
+                        return result;
+                }
+
+                result = GenBinaryOp(parser->cg, PrecToGenOp(b->symbol), a->valType == TYPE_STRING,
+                                     a->valType == TYPE_INT && c->valType == TYPE_INT);
                 if (result != 0)
                     return result;
             }
-            result = GenBinaryOp(parser->cg, PrecToGenOp(b->symbol), a->valType == TYPE_STRING,
-                                 a->valType == TYPE_INT && c->valType == TYPE_INT);
-            if (result != 0)
-                return result;
         }
     }
 
@@ -1080,12 +1091,18 @@ static int MemberAccess(Parser *parser, typeId *type) {
                     kind = 's';
                 } else if (before == TYPE_DOUBLE) {
                     kind = 'f';
+                } else if (before == TYPE_BOOLEAN) {
+                    kind = 'b';
+                } else if (before == TYPE_UNIT) {
+                    kind = 'u';
                 }
                 result = GenBuiltinToStr(parser->cg, kind);
             } else if (strcmp(member, "toInt") == 0) {
                 result = GenBuiltinToInt(parser->cg);
             } else if (strcmp(member, "length") == 0) {
                 result = GenBuiltinStrLength(parser->cg);
+            } else if (strcmp(member, "floor") == 0) {
+                result = GenBuiltinFloor(parser->cg);
             }
             if (result != 0)
                 return result;
@@ -1157,6 +1174,17 @@ static int Expr(Parser *parser, typeId *outType) {
             result = StackPush(&stack, item);
             if (result != 0)
                 return result;
+
+            if (parser->genCode && a == PREC_AND) {
+                result = GenAndStart(parser->cg);
+                if (result != 0)
+                    return result;
+            } else if (parser->genCode && a == PREC_OR) {
+                result = GenOrStart(parser->cg);
+                if (result != 0)
+                    return result;
+            }
+
             prevOperand = (a == PREC_I || a == PREC_RPAREN);
             if (a == PREC_LPAREN) {
                 depth++;
@@ -1241,6 +1269,9 @@ static int Expr(Parser *parser, typeId *outType) {
                                strcmp(tokName, "readDouble") == 0) {
                         result = GenBuiltinReadDouble(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall &&
+                               strcmp(tokName, "readBoolean") == 0) {
+                        result = GenBuiltinReadBool(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall &&
                                strcmp(tokName, "readLine") == 0) {
                         result = GenBuiltinReadLine(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toInt") == 0) {
@@ -1260,6 +1291,10 @@ static int Expr(Parser *parser, typeId *outType) {
                             kind = 'f';
                         } else if (argTypes[0] == TYPE_STRING) {
                             kind = 's';
+                        } else if (argTypes[0] == TYPE_UNIT) {
+                            kind = 'u';
+                        } else if (argTypes[0] == TYPE_BOOLEAN) {
+                            kind = 'b';
                         }
                         result = GenBuiltinToStr(parser->cg, kind);
                     } else if (tokType == TOKEN_IDENT && isCall) {
