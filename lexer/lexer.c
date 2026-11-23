@@ -460,19 +460,36 @@ int ReadString(Lexer *lexer, Token *token, TokenType type, size_t line, size_t c
 
             if (character == '\\'){
                 LexerNextCharacter(lexer);
-                result = AddChar(&buffer, &length, &capacity, '\\');
+                character = LexerPreviewCharacter(lexer);
+                switch (character){
+                    case 'n':
+                        character = '\n';
+                        break;
+                    case 'r':
+                        character = '\r';
+                        break;
+                    case 't':
+                        character = '\t';
+                        break;
+                    case '"':
+                        character = '"';
+                        break;
+                    case '\\':
+                        character = '\\';
+                        break;
+                    default:
+                        result = 1;
+                        break;
+                }
                 if (result != 0){
                     break;
                 }
-                character = LexerPreviewCharacter(lexer);
-                if (character != '\\' && character != '"' && character != 'n' && character != 'r' && character != 't'){
-                    result = 1;
-                    break;
-                }
+                LexerNextCharacter(lexer);
+            } else {
+                character = LexerNextCharacter(lexer);
             }
-
-            result = AddChar(&buffer, &length, &capacity, LexerNextCharacter(lexer));
-            if (result !=0){
+            result = AddChar(&buffer, &length, &capacity, character);
+            if (result != 0){
                 break;
             }
         }
