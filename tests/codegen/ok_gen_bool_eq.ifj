@@ -1,0 +1,14 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    val a = true
+    val b = !a
+    print(a == b)
+    print(a != b)
+    if 1 < 2 then
+        print("x")
+    else if 2 < 3 then
+        print("y")
+    print(b)
