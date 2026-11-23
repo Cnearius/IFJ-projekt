@@ -897,6 +897,41 @@ int LambdaBodyStart(const char **paramNames, const typeId *paramTypes, int param
 }
 
 /**
+ * @param hasResult ci telo lambda funkcie vratilo hodnotu
+ * @param resultType typ vysledku tela, pouziva sa iba ked hasResult je true
+ * @param outType sem sa zapise funkcny typ lambda funkcie
+ * @return 99 pri internej chybe
+ * @return 6 ked je vysledok tela TYPE_UNDEFINED
+ * @return 0 pri uspechu
+ * @brief uzavrie izolovany scope lambda funkcie a posklada jej funkcny typ
+ */
+int LambdaBodyEnd(bool hasResult, typeId resultType, typeId *outType) {
+    if (outType == NULL || rootTable == NULL)
+        return 99;
+    *outType = TYPE_UNDEFINED;
+    if (lambdaFrameCount == 0)
+        return 99;
+    lambdaFrame *frame = &lambdaFrames[lambdaFrameCount - 1];
+    if (blockDepth != frame->savedBlockDepth + 1)
+        return 99;
+    if (!PopScope(rootTable))
+        return 99;
+    blockDepth--;
+
+    typeId *paramTypes = frame->paramTypes;
+    int paramCount = frame->paramCount;
+    lambdaFrameCount--;
+    if (hasResult && resultType == TYPE_UNDEFINED) {
+        free(paramTypes);
+        return 6;
+    }
+    typeId bodyType = hasResult ? resultType : TYPE_UNIT;
+    int result = FunctionType(paramTypes, paramCount, bodyType, outType);
+    free(paramTypes);
+    return result;
+}
+
+/**
  * @param name meno funkcie v root tabulke
  * @return 0 pri uspechu
  * @return 99 pri internej chybe
@@ -1175,6 +1210,8 @@ int ValmemMember(typeId objType, const char *member, typeId *outType) {
  * @brief Overenie zvysku pravidiel pre return, ktore este neboli pokryte v FuncBodyEnd()
  */
 int Return(bool hasValue, typeId valueType) {
+    if (lambdaFrameCount > 0)
+        return 10;
     if (currentFn.name == NULL)
         return 99;
     currentFn.sawReturn = true;

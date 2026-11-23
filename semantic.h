@@ -48,4 +48,5 @@ int GetFunctionSignature(const char *name, typeId *typeArr, const int arrSize, i
                          typeId *returnType);
 void SetVarInitInfo(const char *initName, bool isBareIdent);
 int LambdaBodyStart(const char **paramNames, const typeId *paramTypes, int paramCount);
+int LambdaBodyEnd(bool hasResult, typeId resultType, typeId *outType);
 #endif
