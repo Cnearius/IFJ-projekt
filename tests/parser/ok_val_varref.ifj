@@ -1,0 +1,11 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+// Ocakavany kod: 0 - premenna inicializovana inou premennou a volanim funkcie
+import ifj26.*
+
+def double(x: Int): Int = x * 2
+
+@main def main(): Unit =
+    val q = 1
+    val p = q
+    val r = double(3)

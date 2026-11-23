@@ -1,0 +1,12 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    val x = 42
+    print(x.toString)
+    val d = 3.9
+    print(d.toInt)
+    val s = "ahoj"
+    print(s.length)
+    print(d.toInt.toString)

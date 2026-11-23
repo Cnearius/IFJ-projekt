@@ -1,0 +1,10 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "test pre A3 - lava strana priradenia musi byt identifikator"
+// Ocakavany navratovy kod: 2
+// Chyba: na lavej strane priradenia je vyraz
+
+import ifj26.*
+
+@main def main(): Unit =
+  var a = 1
+  a + 1 = 5

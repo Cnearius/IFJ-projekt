@@ -1,0 +1,12 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "napis mi testy na pravidlo 3 (funkcia konci if-om) pre parser IFJ26"
+// Ocakavany kod: 0 - funkcia : Unit moze koncit if bez else
+import ifj26.*
+
+def f(): Unit =
+    val b = true
+    if b then
+        val y = 1
+
+@main def main(): Unit =
+    f()

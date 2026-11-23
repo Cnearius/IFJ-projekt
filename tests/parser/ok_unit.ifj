@@ -1,0 +1,9 @@
+// Testovaci program navrhnuty AI (Claude) pocas mentoringu parsera.
+// Prompt: "test pre Unit literal () vo vyraze"
+// Ocakavany navratovy kod: 0
+
+import ifj26.*
+
+@main def main(): Unit =
+  val u = ()
+  print(())

@@ -1,0 +1,13 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na dopredne volania funkcii bez uvedeneho typu"
+// Ocakavany kod: 0 - retazec a -> b -> c, typy sa odvodia az na tretikrat
+import ifj26.*
+
+@main def main(): Unit =
+    val x = a()
+
+def a() = b() + 1
+
+def b() = c() * 2
+
+def c() = 3

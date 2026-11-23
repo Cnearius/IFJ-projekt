@@ -7,7 +7,7 @@ SRC_FILES := $(shell find . -maxdepth 2 -type f -name "*.c")
 HDR_FILES := $(shell find . -maxdepth 2 -type f -name "*.h")
 ALL_FILES := $(SRC_FILES) $(HDR_FILES)
 
-.PHONY: all clean format check-format cppcheck valgrind doc
+.PHONY: all clean format check-format cppcheck valgrind doc test semantic-test
 
 all: $(TARGET)
 
@@ -53,4 +53,29 @@ doc:
 	fi
 
 clean:
-	rm -rf $(TARGET) doc
+	rm -rf $(TARGET) doc lexer.o $(TEST_BIN) $(SEMANTIC_TEST_BIN)
+
+# ===== Unit testy lexera (GoogleTest) =====
+# Ciel test vygenerovany AI (Claude).
+# Prompt: "urobit make file pre testy"
+# Nie su sucastou hlavneho prekladu, spustaju sa len cez "make test".
+TEST_BIN = lexer_test
+
+test: $(TEST_BIN)
+	./$(TEST_BIN)
+
+$(TEST_BIN): tests/lexer/lexer_test.cpp lexer/lexer.c lexer/lexer.h lexer/token.h
+	$(CC) $(CFLAGS) -c lexer/lexer.c -o lexer.o
+	g++ -std=c++17 -Wall -Wextra -g tests/lexer/lexer_test.cpp lexer.o -lgtest -lgtest_main -pthread -o $(TEST_BIN)
+
+# ===== Semanticke testy (C) =====
+# Ciel semantic-test vygenerovany AI (Deepseek).
+# Nie su sucastou hlavneho prekladu, spustaju sa len cez "make semantic-test".
+SEMANTIC_TEST_BIN = build/semantic_test
+
+semantic-test: $(SEMANTIC_TEST_BIN)
+	./$(SEMANTIC_TEST_BIN)
+
+$(SEMANTIC_TEST_BIN): tests/semantic/semantic_test.c semantic.c semantic.h symtable.c symtable.h types.h lexer/token.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -fsanitize=address,undefined tests/semantic/semantic_test.c semantic.c symtable.c -o $(SEMANTIC_TEST_BIN)
