@@ -1,0 +1,10 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    val x: Double = 1
+    print(x + 0.5)
+    var y: Double = 2.5
+    y = 3
+    print(y + 0.5)

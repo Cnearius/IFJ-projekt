@@ -1,0 +1,14 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "napis mi testy na pravidlo 3 (funkcia konci if-om) pre parser IFJ26"
+// Ocakavany kod: 0 - funkcia : Int konci if/else, obe vetvy koncia return
+import ifj26.*
+
+def f(): Int =
+    val b = true
+    if b then
+        return 1
+    else
+        return 2
+
+@main def main(): Unit =
+    val x = f()

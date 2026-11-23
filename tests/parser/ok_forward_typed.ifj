@@ -1,0 +1,11 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na dopredne volania funkcii bez uvedeneho typu"
+// Ocakavany kod: 0 - funkcia s typom Int vola funkciu bez typu definovanu nizsie
+import ifj26.*
+
+@main def main(): Unit =
+    val x = f()
+
+def f(): Int = g()
+
+def g() = 7

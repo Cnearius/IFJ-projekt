@@ -8,8 +8,8 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-#include "../lexer/lexer.h"
-#include "../lexer/token.h"
+#include "lexer.h"
+#include "token.h"
 
 /**
  * @brief Vykonanie syntaktickej analyzy celeho programu

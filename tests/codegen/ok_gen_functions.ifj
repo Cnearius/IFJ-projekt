@@ -1,0 +1,19 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+def add(a: Int, b: Int): Int =
+    return a + b
+
+def twice(x: Int): Int = x * 2
+
+def abs(x: Int): Int =
+    if x < 0 then
+        return -x
+    else
+        return x
+
+@main def main(): Unit =
+    print(add(2, 3))
+    print(twice(4))
+    print(abs(-7))

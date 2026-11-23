@@ -8,8 +8,8 @@
 #ifndef CODEGEN_H
 #define CODEGEN_H
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #define INIT_SIZE 128
 
@@ -30,37 +30,39 @@ typedef struct {
     stringBuff funHeader;
     stringBuff funBody;
 
-    int labelCounter;       
-    int nextScopeId;         
+    int labelCounter;
+    int nextScopeId;
 
     int labelStack[INIT_SIZE];
     int labelStackTop;
 
-    varScope *vars;     
+    varScope *vars;
     int varCount;
     int varCapacity;
-    int activeScopes[INIT_SIZE];  
-    int scopeDepth;          
+    int activeScopes[INIT_SIZE];
+    int scopeDepth;
 
-    const char *currentFunc; 
+    const char *currentFunc;
 
 } codeGen;
 
 /* ---------- String buffer ---------- */
-int  StrBufferInit(stringBuff *buff);
+int StrBufferInit(stringBuff *buff);
 void StrBufferFree(stringBuff *buff);
-int  StrBufferResize(stringBuff *buff);
-int  StrBufferAppend(stringBuff *buff, const char *cmd);
+int StrBufferResize(stringBuff *buff);
+int StrBufferAppend(stringBuff *buff, const char *cmd);
 
 /* ---------- Cyklus generatora ---------- */
-int  CodeGenInit(codeGen *cg);
+int CodeGenInit(codeGen *cg);
 void CodeGenFree(codeGen *cg);
-int  Return99CodeGen(codeGen *cg);
+int Return99CodeGen(codeGen *cg);
 
 /* ---------- Program a funkcie ---------- */
 int GenProlog(codeGen *cg);
 int GenFunStart(codeGen *cg, const char *funcName, bool isMain);
-int GenFunEnd(codeGen *cg, bool isMain, bool bodyLeavesValue);   /* if you add the flag: (codeGen *cg, bool isMain, bool bodyLeavesValue) */
+int GenFunEnd(codeGen *cg, bool isMain,
+              bool bodyLeavesValue); /* if you add the flag: (codeGen *cg, bool isMain, bool
+                                        bodyLeavesValue) */
 int GenFuncParams(codeGen *cg, const char **params, int paramCount);
 int GenCall(codeGen *cg, const char *funcName);
 int GenReturn(codeGen *cg, bool hasReturnValue, bool isMain);

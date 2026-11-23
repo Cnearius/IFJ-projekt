@@ -5,7 +5,7 @@
  * @brief Vstupny bod prekladaca: nacita program zo stdin a spusti syntakticku analyzu
  */
 
-#include "parser/parser.h"
+#include "parser.h"
 #include <stdio.h>
 
 int main(void) {

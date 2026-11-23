@@ -1,0 +1,9 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+def half(x: Double): Double = x / 2
+
+@main def main(): Unit =
+    print(half(3))
+    print(1)
