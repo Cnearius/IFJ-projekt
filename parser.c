@@ -6,8 +6,8 @@
  */
 
 #include "parser.h"
-#include "../codegen.h"
-#include "../semantic.h"
+#include "codegen.h"
+#include "semantic.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>

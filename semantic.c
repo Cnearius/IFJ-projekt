@@ -10,9 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "lexer/token.h"
 #include "semantic.h"
 #include "symtable.h"
+#include "token.h"
 #include "types.h"
 
 #define TYPE_ID_BASE 100
