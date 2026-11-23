@@ -1146,6 +1146,46 @@ static int FlushPiece(Parser *parser, char *piece, size_t *len) {
 }
 
 /**
+ * @brief Vyhodnoti vyraz zo strinhu v tvare ${...} cez docasny lexer a Expr, potom vrati parser do
+ * povodneho stavu
+ * @param parser stav parsera s aktualnym tokenom
+ * @param src text vyrazu ktory dostaneme (INTERPOLATED)
+ * @param outType typ vyrazu ktory dostaneme
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int SubExpr(Parser *parser, const char *src, typeId *outType) {
+    FILE *file = tmpfile();
+    if (file == NULL) {
+        return 99;
+    }
+    fputs(src, file);
+    rewind(file);
+    Lexer *lexer = LexerCreate(file);
+    if (lexer == NULL) {
+        fclose(file);
+        return 99;
+    }
+    Parser saved = *parser;
+    parser->lexer = lexer;
+    parser->fieldOfTokens = NULL;
+    parser->count = 0;
+    parser->capacity = 0;
+    int result = FillBuffer(parser);
+    if (result == 0) {
+        ResetParserPosition(parser);
+        result = Expr(parser, outType);
+        if (result == 0 && parser->current.type != TOKEN_EOF && parser->current.type != TOKEN_EOL) {
+            result = 2;
+        }
+    }
+    FreeBuffer(parser);
+    LexerFree(lexer);
+    fclose(file);
+    *parser = saved;
+    return result;
+}
+
+/**
  * @brief spracuje interpolovany retazec s "..." a vygeneruje spajanie jeho kusov (INTERPOLATED)
  * @param parser stav parsera s aktualnym tokenom
  * @param text text
@@ -1228,6 +1268,50 @@ static int InterpString(Parser *parser, const char *text) {
             }
             i = j - 1;
 
+        } else if (text[i] == '$' && text[i + 1] == '{') {
+            size_t nameLen = 0;
+            result = FlushPiece(parser, piece, &len);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            size_t j = i + 2;
+            while (text[j] != '\0' && text[j] != '}') {
+                j++;
+            }
+            if (text[j] == '\0') {
+                free(piece);
+                free(name);
+                return 1;
+            }
+            for (size_t k = i + 2; k <= j - 1; k++) {
+                name[nameLen] = text[k];
+                nameLen++;
+            }
+            name[nameLen] = '\0';
+            typeId exprType;
+            result = SubExpr(parser, name, &exprType);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            if (parser->genCode) {
+                result = GenBuiltinToStr(parser->cg, KindOfType(exprType));
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+                result = GenBinaryOp(parser->cg, '+', true, false);
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+            }
+            i = j;
         } else {
             piece[len] = text[i];
             len++;
