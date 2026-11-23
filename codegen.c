@@ -1319,3 +1319,31 @@ int GenBuiltinSubStr(codeGen *cg) {
     }
     return 0;
 }
+
+int GenBuiltinFloor(codeGen *cg) {
+    if (cg == NULL) return 99;
+
+    int id = ++cg->labelCounter;
+    char buf[1024];
+    int written = snprintf(buf, sizeof(buf),
+            "POPS GF@%%tmp2\n"                          //tmp2=povodny float
+            "FLOAT2INT GF@%%tmp1 GF@%%tmp2\n"           //oseknutie k nule
+            "INT2FLOAT GF@%%tmp1 GF@%%tmp1\n"           //spat na float
+            "PUSHS GF@%%tmp2\n"
+            "PUSHS GF@%%tmp1\n"
+            "LTS\n"                                     //povodny < oseknuty
+            "PUSHS bool@true\n"
+            "JUMPIFEQS $floor_dec$%d\n"
+            "JUMP $floor_end$%d\n"
+            "LABEL $floor_dec$%d\n"
+            "SUB GF@%%tmp1 GF@%%tmp1 float@0x1p+0\n"    //-1 pre zaporne desatinne cisla
+            "LABEL $floor_end$%d\n"
+            "PUSHS GF@%%tmp1\n",
+            id, id, id, id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf) ||
+        StrBufferAppend(&cg->funBody, buf) != 0) {
+        return Return99CodeGen(cg);
+    }
+    return 0;
+}
