@@ -948,6 +948,98 @@ int GenWhileEnd(codeGen *cg) {
 }
 
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre zaciatok porovnavania AND
+ */ 
+int GenAndStart(codeGen *cg) {
+    if (!cg) return 99;
+    if (cg->labelStackTop >= INIT_SIZE) return Return99CodeGen(cg);
+
+    int id = cg->labelCounter++;
+    cg->labelStack[cg->labelStackTop++] = id;
+
+    char buf[INIT_SIZE*2];
+    int written = snprintf(buf, sizeof(buf),
+                    "PUSHS bool@false\n"
+                    "JUMPIFEQS $and_false$%d\n", id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
+    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    return 0;
+}
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre koniec porovnavania AND
+ */ 
+int GenAndEnd(codeGen *cg) {
+    if (!cg) return 99;
+    if (cg->labelStackTop <= 0) return Return99CodeGen(cg);
+
+    int id = cg->labelStack[--cg->labelStackTop];
+
+    char buf[INIT_SIZE*2];
+    int written = snprintf(buf, sizeof(buf),
+                            "JUMP $and_end$%d\n"
+                            "LABEL $and_false$%d\n"
+                            "PUSHS bool@false\n"
+                            "LABEL $and_end$%d\n",
+                            id, id, id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
+    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    return 0;
+}
+
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre zaciatok porovnavania OR
+ */ 
+int GenOrStart(codeGen *cg) {
+    if (!cg) return 99;
+    if (cg->labelStackTop >= INIT_SIZE) return Return99CodeGen(cg);
+
+    int id = cg->labelCounter++;
+    cg->labelStack[cg->labelStackTop++] = id;
+
+    char buf[INIT_SIZE*2];
+    int written = snprintf(buf, sizeof(buf),
+                    "PUSHS bool@true\n"
+                    "JUMPIFEQS $or_true$%d\n", id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
+    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    return 0;
+}
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre koniec porovnavania OR
+ */ 
+int GenOrEnd(codeGen *cg) {
+    if (!cg) return 99;
+    if (cg->labelStackTop <= 0) return Return99CodeGen(cg);
+
+    int id = cg->labelStack[--cg->labelStackTop];
+
+    char buf[INIT_SIZE*2];
+    int written = snprintf(buf, sizeof(buf),
+                            "JUMP $or_end$%d\n"
+                            "LABEL $or_true$%d\n"
+                            "PUSHS bool@true\n"
+                            "LABEL $or_end$%d\n",
+                            id, id, id);
+
+    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
+    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    return 0;
+}
 
 /* ---------- Built-in funkcie ---------- */
 
@@ -962,7 +1054,7 @@ static int GenBuiltinRead(codeGen *cg, const char *type, const char *defVal) {
     if (cg == NULL) return 99;
 
     int id = ++cg->labelCounter;
-    char buf[INIT_SIZE];
+    char buf[INIT_SIZE*2];
 
     //Vygenerovanie navestidla - pokial je nacitana hodnota NULL, tak je ulozena prislusna nulova hodnota
     snprintf(buf, sizeof(buf),
@@ -997,6 +1089,12 @@ int GenBuiltinReadDouble(codeGen *cg) { return GenBuiltinRead(cg, "float", "floa
  */ 
 int GenBuiltinReadLine(codeGen *cg) { return GenBuiltinRead(cg, "string", "string@"); }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre nacitanie string
+ */ 
+int GenBuiltinReadBool(codeGen *cg) { return GenBuiltinRead(cg, "bool", "bool@false"); }
 
 
 /**
@@ -1037,7 +1135,7 @@ int GenBuiltinPrint(codeGen *cg, bool isUnit, bool pushUnitResult) {
 
 /**
  * @param cg ukazovatel na datovu strukturu generatora kodu
- * @param kind 'i' = Int, 'f' = Double, 's' = String, 'u' = Unit
+ * @param kind 'i' = Int, 'f' = Double, 's' = String, 'u' = Unit, 'b' = Bool
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre prevod int/float do string
  */ 
@@ -1046,6 +1144,24 @@ int GenBuiltinToStr(codeGen *cg, char kind) {
 
     if (kind == 's') {
         //Na vrchole zasobnika je retazec, ktory netreba dalej prevadzat
+        return 0;
+    }
+
+    if (kind == 'b') {
+        int id = ++cg->labelCounter;
+        char buff[INIT_SIZE*2];
+
+        //Pokial je na vrchole zasobnika true - pushni string "true", inak pushni string "false"
+        snprintf(buff, sizeof(buff),
+                "PUSHS bool@true\n"
+                "JUMPIFEQS $toStr_true$%d\n"
+                "PUSHS string@false\n"
+                "JUMP $toStr_bool_end$%d\n"
+                "LABEL $toStr_true$%d\n"
+                "PUSHS string@true\n"
+                "LABEL $toStr_bool_end$%d\n", id, id, id, id);
+
+        if (StrBufferAppend(&cg->funBody, buff) != 0) return Return99CodeGen(cg);
         return 0;
     }
 
