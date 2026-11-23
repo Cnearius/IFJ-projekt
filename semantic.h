@@ -47,4 +47,5 @@ int ResetSemAnalysisForFinalAnalysis(void);
 int GetFunctionSignature(const char *name, typeId *typeArr, const int arrSize, int *capacity,
                          typeId *returnType);
 void SetVarInitInfo(const char *initName, bool isBareIdent);
+int LambdaBodyStart(const char **paramNames, const typeId *paramTypes, int paramCount);
 #endif
