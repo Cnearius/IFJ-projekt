@@ -1061,6 +1061,25 @@ static int StackReduce(Parser *parser, PrecStack *stack) {
 }
 
 /**
+ * @brief Funkcia na premenu typu na pismenko ('s', 'f', 'b', 'u', 'i')
+ * @param type typ
+ * @return vrati 'f' pre double, 's' pre string, 'b' pre boolean, 'u' pre unit a inak 'i'
+ */
+static char KindOfType(typeId type) {
+    char kind = 'i';
+    if (type == TYPE_STRING) {
+        kind = 's';
+    } else if (type == TYPE_DOUBLE) {
+        kind = 'f';
+    } else if (type == TYPE_BOOLEAN) {
+        kind = 'b';
+    } else if (type == TYPE_UNIT) {
+        kind = 'u';
+    }
+    return kind;
+}
+
+/**
  * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia (n.floor.toInt)
  * @param parser stav parsera s aktualnym tokenom
  * @param type typ toho co je pred bodkou na vstupe a na vystupe typ po pristupe k clenom (VALMEM)
@@ -1086,16 +1105,7 @@ static int MemberAccess(Parser *parser, typeId *type) {
 
         if (parser->genCode) {
             if (strcmp(member, "toString") == 0) {
-                char kind = 'i';
-                if (before == TYPE_STRING) {
-                    kind = 's';
-                } else if (before == TYPE_DOUBLE) {
-                    kind = 'f';
-                } else if (before == TYPE_BOOLEAN) {
-                    kind = 'b';
-                } else if (before == TYPE_UNIT) {
-                    kind = 'u';
-                }
+                char kind = KindOfType(before);
                 result = GenBuiltinToStr(parser->cg, kind);
             } else if (strcmp(member, "toInt") == 0) {
                 result = GenBuiltinToInt(parser->cg);
@@ -1108,6 +1118,54 @@ static int MemberAccess(Parser *parser, typeId *type) {
                 return result;
         }
     }
+    return 0;
+}
+
+/**
+ * @brief spracuje interpolovany retazec s "..." a vygeneruje spajanie jeho kusov (INTERPOLATED)
+ * @param parser stav parsera s aktualnym tokenom
+ * @param text text
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int InterpString(Parser *parser, const char *text) {
+    size_t len = 0;
+    char *piece = malloc(strlen(text) + 1);
+
+    if (piece == NULL) {
+        return 99;
+    }
+
+    if (parser->genCode) {
+        int result = GenPushString(parser->cg, "");
+        if (result != 0) {
+            free(piece);
+            return result;
+        }
+    }
+    for (size_t i = 0; i < strlen(text); i++) {
+        if (text[i] == '$' && text[i + 1] == '$') {
+            piece[len] = '$';
+            len++;
+            i++;
+        } else {
+            piece[len] = text[i];
+            len++;
+        }
+    }
+    if (len > 0 && parser->genCode) {
+        piece[len] = '\0';
+        int result = GenPushString(parser->cg, piece);
+        if (result != 0) {
+            free(piece);
+            return result;
+        }
+        result = GenBinaryOp(parser->cg, '+', true, false);
+        if (result != 0) {
+            free(piece);
+            return result;
+        }
+    }
+    free(piece);
     return 0;
 }
 
@@ -1240,6 +1298,12 @@ static int Expr(Parser *parser, typeId *outType) {
                     }
                 }
 
+                if (tokType == TOKEN_INTERPOLATED) {
+                    result = InterpString(parser, tokName);
+                    if (result != 0)
+                        return result;
+                }
+
                 if (parser->genCode) {
                     result = 0;
                     if (tokType == TOKEN_INT_LITERAL) {
@@ -1286,16 +1350,7 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "ord") == 0) {
                         result = GenBuiltinOrd(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toStr") == 0) {
-                        char kind = 'i';
-                        if (argTypes[0] == TYPE_DOUBLE) {
-                            kind = 'f';
-                        } else if (argTypes[0] == TYPE_STRING) {
-                            kind = 's';
-                        } else if (argTypes[0] == TYPE_UNIT) {
-                            kind = 'u';
-                        } else if (argTypes[0] == TYPE_BOOLEAN) {
-                            kind = 'b';
-                        }
+                        char kind = KindOfType(argTypes[0]);
                         result = GenBuiltinToStr(parser->cg, kind);
                     } else if (tokType == TOKEN_IDENT && isCall) {
                         result = GenCall(parser->cg, tokName);
