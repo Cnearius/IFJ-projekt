@@ -1080,12 +1080,18 @@ static int MemberAccess(Parser *parser, typeId *type) {
                     kind = 's';
                 } else if (before == TYPE_DOUBLE) {
                     kind = 'f';
+                } else if (before == TYPE_BOOLEAN) {
+                    kind = 'b';
+                } else if (before == TYPE_UNIT) {
+                    kind = 'u';
                 }
                 result = GenBuiltinToStr(parser->cg, kind);
             } else if (strcmp(member, "toInt") == 0) {
                 result = GenBuiltinToInt(parser->cg);
             } else if (strcmp(member, "length") == 0) {
                 result = GenBuiltinStrLength(parser->cg);
+            } else if (strcmp(member, "floor") == 0) {
+                result = GenBuiltinFloor(parser->cg);
             }
             if (result != 0)
                 return result;
@@ -1240,6 +1246,8 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_IDENT && isCall &&
                                strcmp(tokName, "readDouble") == 0) {
                         result = GenBuiltinReadDouble(parser->cg);
+                    } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "readBoolean") == 0) {
+                        result = GenBuiltinReadBool(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall &&
                                strcmp(tokName, "readLine") == 0) {
                         result = GenBuiltinReadLine(parser->cg);
@@ -1260,6 +1268,10 @@ static int Expr(Parser *parser, typeId *outType) {
                             kind = 'f';
                         } else if (argTypes[0] == TYPE_STRING) {
                             kind = 's';
+                        } else if (argTypes[0] == TYPE_UNIT) {
+                            kind = 'u';
+                        } else if (argTypes[0] == TYPE_BOOLEAN) {
+                            kind = 'b';
                         }
                         result = GenBuiltinToStr(parser->cg, kind);
                     } else if (tokType == TOKEN_IDENT && isCall) {
