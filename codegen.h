@@ -110,4 +110,14 @@ int GenBuiltinChr(codeGen *cg);
 int GenBuiltinOrd(codeGen *cg);
 int GenBuiltinSubStr(codeGen *cg);
 
+/* ---------- Rozsirenie BOOLEAN ---------- */
+int GenAndStart(codeGen *cg);
+int GenAndEnd(codeGen *cg);
+int GenOrStart(codeGen *cg);
+int GenOrEnd(codeGen *cg);
+int GenBuiltinReadBool(codeGen *cg);
+
+/* ---------- Rozsirenie VALMEM ---------- */
+int GenBuiltinFloor(codeGen *cg);
+
 #endif
