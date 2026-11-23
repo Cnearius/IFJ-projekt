@@ -8,6 +8,7 @@
 #include "parser.h"
 #include "codegen.h"
 #include "semantic.h"
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1061,6 +1062,25 @@ static int StackReduce(Parser *parser, PrecStack *stack) {
 }
 
 /**
+ * @brief Funkcia na premenu typu na pismenko ('s', 'f', 'b', 'u', 'i')
+ * @param type typ
+ * @return vrati 'f' pre double, 's' pre string, 'b' pre boolean, 'u' pre unit a inak 'i'
+ */
+static char KindOfType(typeId type) {
+    char kind = 'i';
+    if (type == TYPE_STRING) {
+        kind = 's';
+    } else if (type == TYPE_DOUBLE) {
+        kind = 'f';
+    } else if (type == TYPE_BOOLEAN) {
+        kind = 'b';
+    } else if (type == TYPE_UNIT) {
+        kind = 'u';
+    }
+    return kind;
+}
+
+/**
  * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia (n.floor.toInt)
  * @param parser stav parsera s aktualnym tokenom
  * @param type typ toho co je pred bodkou na vstupe a na vystupe typ po pristupe k clenom (VALMEM)
@@ -1086,16 +1106,7 @@ static int MemberAccess(Parser *parser, typeId *type) {
 
         if (parser->genCode) {
             if (strcmp(member, "toString") == 0) {
-                char kind = 'i';
-                if (before == TYPE_STRING) {
-                    kind = 's';
-                } else if (before == TYPE_DOUBLE) {
-                    kind = 'f';
-                } else if (before == TYPE_BOOLEAN) {
-                    kind = 'b';
-                } else if (before == TYPE_UNIT) {
-                    kind = 'u';
-                }
+                char kind = KindOfType(before);
                 result = GenBuiltinToStr(parser->cg, kind);
             } else if (strcmp(member, "toInt") == 0) {
                 result = GenBuiltinToInt(parser->cg);
@@ -1108,6 +1119,212 @@ static int MemberAccess(Parser *parser, typeId *type) {
                 return result;
         }
     }
+    return 0;
+}
+
+/**
+ * @brief Posle nazbierany text na zasobnik a prilepi ho
+ * @param parser stav parsera s aktualnym tokenom
+ * @param piece pointer na alokovanu pamet pre kusok
+ * @param len pointer na pocet znakov nazbieranych v piece
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int FlushPiece(Parser *parser, char *piece, size_t *len) {
+    if (*len > 0 && parser->genCode) {
+        piece[*len] = '\0';
+        int result = GenPushString(parser->cg, piece);
+        if (result != 0) {
+            return result;
+        }
+        result = GenBinaryOp(parser->cg, '+', true, false);
+        if (result != 0) {
+            return result;
+        }
+    }
+    *len = 0;
+    return 0;
+}
+
+/**
+ * @brief Vyhodnoti vyraz zo strinhu v tvare ${...} cez docasny lexer a Expr, potom vrati parser do
+ * povodneho stavu
+ * @param parser stav parsera s aktualnym tokenom
+ * @param src text vyrazu ktory dostaneme (INTERPOLATED)
+ * @param outType typ vyrazu ktory dostaneme
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int SubExpr(Parser *parser, const char *src, typeId *outType) {
+    FILE *file = tmpfile();
+    if (file == NULL) {
+        return 99;
+    }
+    fputs(src, file);
+    rewind(file);
+    Lexer *lexer = LexerCreate(file);
+    if (lexer == NULL) {
+        fclose(file);
+        return 99;
+    }
+    Parser saved = *parser;
+    parser->lexer = lexer;
+    parser->fieldOfTokens = NULL;
+    parser->count = 0;
+    parser->capacity = 0;
+    int result = FillBuffer(parser);
+    if (result == 0) {
+        ResetParserPosition(parser);
+        result = Expr(parser, outType);
+        if (result == 0 && parser->current.type != TOKEN_EOF && parser->current.type != TOKEN_EOL) {
+            result = 2;
+        }
+    }
+    FreeBuffer(parser);
+    LexerFree(lexer);
+    fclose(file);
+    *parser = saved;
+    return result;
+}
+
+/**
+ * @brief spracuje interpolovany retazec s "..." a vygeneruje spajanie jeho kusov (INTERPOLATED)
+ * @param parser stav parsera s aktualnym tokenom
+ * @param text text
+ * @return 0 ak OK, inak kod chyby (1/2/99)
+ */
+static int InterpString(Parser *parser, const char *text) {
+    size_t len = 0;
+    char *piece = malloc(strlen(text) + 1);
+
+    if (piece == NULL) {
+        return 99;
+    }
+
+    char *name = malloc(strlen(text) + 1);
+
+    if (name == NULL) {
+        free(piece);
+        return 99;
+    }
+
+    int result = 0;
+
+    if (parser->genCode) {
+        result = GenPushString(parser->cg, "");
+        if (result != 0) {
+            free(piece);
+            free(name);
+            return result;
+        }
+    }
+
+    for (size_t i = 0; i < strlen(text); i++) {
+        if (text[i] == '$' && text[i + 1] == '$') {
+            piece[len] = '$';
+            len++;
+            i++;
+        } else if (text[i] == '$' && (isalpha((unsigned char)text[i + 1]) || text[i + 1] == '_')) {
+            result = FlushPiece(parser, piece, &len);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            size_t j = i + 1;
+            size_t nameLen = 0;
+            while (isalnum((unsigned char)text[j]) || text[j] == '_') {
+                name[nameLen] = text[j];
+                nameLen++;
+                j++;
+            }
+            name[nameLen] = '\0';
+            typeId varType;
+            result = GetVarType(name, &varType);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            if (parser->genCode) {
+                result = GenPushVar(parser->cg, name);
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+
+                result = GenBuiltinToStr(parser->cg, KindOfType(varType));
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+
+                result = GenBinaryOp(parser->cg, '+', true, false);
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+            }
+            i = j - 1;
+
+        } else if (text[i] == '$' && text[i + 1] == '{') {
+            size_t nameLen = 0;
+            result = FlushPiece(parser, piece, &len);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            size_t j = i + 2;
+            while (text[j] != '\0' && text[j] != '}') {
+                j++;
+            }
+            if (text[j] == '\0') {
+                free(piece);
+                free(name);
+                return 1;
+            }
+            for (size_t k = i + 2; k <= j - 1; k++) {
+                name[nameLen] = text[k];
+                nameLen++;
+            }
+            name[nameLen] = '\0';
+            typeId exprType;
+            result = SubExpr(parser, name, &exprType);
+            if (result != 0) {
+                free(piece);
+                free(name);
+                return result;
+            }
+            if (parser->genCode) {
+                result = GenBuiltinToStr(parser->cg, KindOfType(exprType));
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+                result = GenBinaryOp(parser->cg, '+', true, false);
+                if (result != 0) {
+                    free(piece);
+                    free(name);
+                    return result;
+                }
+            }
+            i = j;
+        } else {
+            piece[len] = text[i];
+            len++;
+        }
+    }
+    result = FlushPiece(parser, piece, &len);
+    if (result != 0) {
+        free(piece);
+        free(name);
+        return result;
+    }
+    free(piece);
+    free(name);
     return 0;
 }
 
@@ -1240,6 +1457,12 @@ static int Expr(Parser *parser, typeId *outType) {
                     }
                 }
 
+                if (tokType == TOKEN_INTERPOLATED) {
+                    result = InterpString(parser, tokName);
+                    if (result != 0)
+                        return result;
+                }
+
                 if (parser->genCode) {
                     result = 0;
                     if (tokType == TOKEN_INT_LITERAL) {
@@ -1286,16 +1509,7 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "ord") == 0) {
                         result = GenBuiltinOrd(parser->cg);
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "toStr") == 0) {
-                        char kind = 'i';
-                        if (argTypes[0] == TYPE_DOUBLE) {
-                            kind = 'f';
-                        } else if (argTypes[0] == TYPE_STRING) {
-                            kind = 's';
-                        } else if (argTypes[0] == TYPE_UNIT) {
-                            kind = 'u';
-                        } else if (argTypes[0] == TYPE_BOOLEAN) {
-                            kind = 'b';
-                        }
+                        char kind = KindOfType(argTypes[0]);
                         result = GenBuiltinToStr(parser->cg, kind);
                     } else if (tokType == TOKEN_IDENT && isCall) {
                         result = GenCall(parser->cg, tokName);

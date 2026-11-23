@@ -1,0 +1,11 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    print(s"ahoj")
+    print("\n")
+    print(s"cena 5$$")
+    print("\n")
+    print(s"")
+    print("|")
