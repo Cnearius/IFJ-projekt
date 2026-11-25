@@ -12,6 +12,7 @@
 #include <stddef.h>
 
 #define INIT_SIZE 128
+#define LAMBDA_STACK_SIZE 8
 
 typedef struct {
     char *data;
@@ -24,6 +25,24 @@ typedef struct {
     char *unique;
     int scopeID;
 } varScope;
+
+typedef struct {
+    stringBuff funHeader;
+    stringBuff funBody;
+
+    int nextScopeId;
+
+    int labelStack[INIT_SIZE];
+    int labelStackTop;
+
+    varScope *vars;
+    int varCount;
+    int varCapacity;
+    int activeScopes[INIT_SIZE];
+    int scopeDepth;
+
+    const char *currentFunc;
+} LambdaSavedState;
 
 typedef struct {
     stringBuff out;
@@ -41,6 +60,10 @@ typedef struct {
     int varCapacity;
     int activeScopes[INIT_SIZE];
     int scopeDepth;
+
+    int lambdaDepth;
+    int lambdaCounter;
+    LambdaSavedState lambdaStack[LAMBDA_STACK_SIZE];
 
     const char *currentFunc;
 
@@ -60,9 +83,7 @@ int Return99CodeGen(codeGen *cg);
 /* ---------- Program a funkcie ---------- */
 int GenProlog(codeGen *cg);
 int GenFunStart(codeGen *cg, const char *funcName, bool isMain);
-int GenFunEnd(codeGen *cg, bool isMain,
-              bool bodyLeavesValue); /* if you add the flag: (codeGen *cg, bool isMain, bool
-                                        bodyLeavesValue) */
+int GenFunEnd(codeGen *cg, bool isMain,bool bodyLeavesValue);
 int GenFuncParams(codeGen *cg, const char **params, int paramCount);
 int GenCall(codeGen *cg, const char *funcName);
 int GenReturn(codeGen *cg, bool hasReturnValue, bool isMain);
@@ -119,5 +140,10 @@ int GenBuiltinReadBool(codeGen *cg);
 
 /* ---------- Rozsirenie VALMEM ---------- */
 int GenBuiltinFloor(codeGen *cg);
+
+/* ---------- Rozsirenie LAMBDAS ---------- */
+int GenCallVar(codeGen *cg, const char *varName);
+int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut, size_t labelSize);
+int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue);
 
 #endif

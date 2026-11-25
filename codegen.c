@@ -1398,3 +1398,169 @@ int GenBuiltinFloor(codeGen *cg) {
     }
     return 0;
 }
+
+
+
+/* ---------- Rozsirenie LAMBDAS ---------- */
+
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre volanie premennej s funkcnou hodnotou
+ */
+int GenCallVar(codeGen *cg, const char *varName) {
+    
+    if (!cg || !varName) return Return99CodeGen(cg);
+
+    const char *uniqueName = FindUniqueVar(cg, varName);
+    if (!uniqueName) return Return99CodeGen(cg);
+
+    char buf[INIT_SIZE];
+    int written = snprintf(buf, sizeof(buf), "CALL LF@%s\n", uniqueName);
+    
+    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);
+
+    if (StrBufferAppend(&cg->funBody, buf)) return Return99CodeGen(cg);
+
+    return 0;
+}
+
+int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut, size_t labelSize) {
+    if (!cg) return Return99CodeGen(cg);
+    if (paramCount > 0 && !params) return Return99CodeGen(cg);
+    if (cg->lambdaDepth >= LAMBDA_STACK_SIZE) return Return99CodeGen(cg);
+
+    int id = cg->lambdaCounter++;
+
+    char label[INIT_SIZE];
+    int lblWritten = snprintf(label, sizeof(label),
+                            "$%%lambda_%d", id);
+
+    if (lblWritten < 0 || (size_t)lblWritten >= sizeof(label)) return Return99CodeGen(cg);
+
+    int outWritten = snprintf(labelOut, labelSize, "%s", label);
+    if (outWritten < 0 || (size_t)outWritten >= labelSize) {
+        return Return99CodeGen(cg);
+    }
+
+    LambdaSavedState *saved = &cg->lambdaStack[cg->lambdaDepth];
+
+    //Ulozenie stavu vonkajsej funkcie
+    saved->funHeader = cg->funHeader;
+    saved->funBody = cg->funBody;
+    saved->currentFunc = cg->currentFunc;
+    saved->vars = cg->vars; saved->varCount = cg->varCount; saved->varCapacity = cg->varCapacity;
+    
+    memcpy(saved->activeScopes, cg->activeScopes, sizeof(int) * (size_t)cg->scopeDepth);
+    saved->scopeDepth = cg->scopeDepth;
+
+    memcpy(saved->labelStack, cg->labelStack, sizeof(int) * (size_t)cg->labelStackTop);
+    saved->labelStackTop = cg->labelStackTop;
+
+    saved->nextScopeId = cg->nextScopeId;
+
+    if (StrBufferInit(&cg->funHeader) != 0) return Return99CodeGen(cg);
+    if (StrBufferInit(&cg->funBody) != 0) return Return99CodeGen(cg);
+    cg->currentFunc = NULL;
+    cg->vars = NULL; cg->varCount = 0; cg->varCapacity = 0;
+    cg->labelStackTop = 0;
+    cg->nextScopeId++;
+    cg->activeScopes[0] = cg->nextScopeId;
+    cg->scopeDepth = 1;
+
+    cg->lambdaDepth++;
+
+    //Hlavicka ramca lambdy
+    char headerBuf[INIT_SIZE*2];
+    int hdrWritten = snprintf(headerBuf, sizeof(headerBuf),
+                              "LABEL %s\n"
+                              "CREATEFRAME\n"
+                              "PUSHFRAME\n",
+                              label);
+    if (hdrWritten < 0 || (size_t)hdrWritten >= sizeof(headerBuf)) {
+        return Return99CodeGen(cg);
+    }
+
+    if (StrBufferAppend(&cg->funHeader, headerBuf) != 0) {
+        return Return99CodeGen(cg);
+    }
+
+    //Nacitanie parametrov zo zasobnika
+    if (paramCount > 0) {
+        int err = GenFuncParams(cg, params, paramCount);
+        if (err != 0) return err;
+    }
+
+    return 0;
+}
+
+int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue) {
+    if (cg == NULL || cg->lambdaDepth <= 0) {return Return99CodeGen(cg);}
+
+    //Ak lambda nenechava hodnotu na zasobniku, vraciame Unit
+    if (!bodyLeavesValue) {
+        if (StrBufferAppend(&cg->funBody, "PUSHS nil@nil\n") != 0) {
+            return Return99CodeGen(cg);
+        }
+    }
+
+    //Ukoncenie ramca a navrat do funkcie
+    if (StrBufferAppend(&cg->funBody,
+                         "POPFRAME\n"
+                         "RETURN\n") != 0) {
+        return Return99CodeGen(cg);
+    }
+
+    //Pripojenie vygenerovanej hlavicky a tela lambdy k vystupu
+    if (StrBufferAppend(&cg->out, cg->funHeader.data) != 0) {
+        return Return99CodeGen(cg);
+    }
+    if (StrBufferAppend(&cg->out, cg->funBody.data) != 0) {
+        return Return99CodeGen(cg);
+    }
+
+    //Uvolnenie struktury lambdy
+    StrBufferFree(&cg->funHeader);
+    StrBufferFree(&cg->funBody);
+    if (cg->vars != NULL) {
+        
+        for (int i = 0; i < cg->varCount; i++) {
+            free(cg->vars[i].name);
+            free(cg->vars[i].unique);
+        }
+
+        free(cg->vars);
+        cg->vars = NULL;
+    }
+    cg->varCount = 0;
+    cg->varCapacity = 0;
+
+    //Obnovenie stavu vonkajsej funkcie
+    cg->lambdaDepth--;
+    LambdaSavedState *saved = &cg->lambdaStack[cg->lambdaDepth];
+
+    cg->funHeader = saved->funHeader;
+    cg->funBody = saved->funBody;
+    cg->nextScopeId = saved->nextScopeId;
+
+    cg->scopeDepth = saved->scopeDepth;
+    if (cg->scopeDepth > 0) {
+        memcpy(cg->activeScopes, saved->activeScopes,
+               sizeof(int) * (size_t)cg->scopeDepth);
+    }
+
+    cg->labelStackTop = saved->labelStackTop;
+    if (cg->labelStackTop > 0) {
+        memcpy(cg->labelStack, saved->labelStack,
+               sizeof(int) * (size_t)cg->labelStackTop);
+    }
+
+    cg->vars = saved->vars;
+    cg->varCount = saved->varCount;
+    cg->varCapacity = saved->varCapacity;
+    cg->currentFunc = saved->currentFunc;
+
+    //cg->lambdaCounter neobnovujeme, aby ostal unikatny
+
+    return 0;
+}
