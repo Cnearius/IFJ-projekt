@@ -14,12 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-//funkcie ktore patria do codegenu, zatial su tu kym ich codegen vytvori
-int GenCallVar(codeGen *cg, const char *varName);
-int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut,
-                   size_t labelSize);
-int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue);
-
 /**
  * @brief enum na druh posledneho prikazu
  */
