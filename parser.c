@@ -67,8 +67,8 @@ static int RestParams(Parser *parser);
 static int MoreParams(Parser *parser);
 static int ParamAfterComma(Parser *parser);
 static int DataType(Parser *parser, typeId *outType);
-static int FuncTypeParams(Parser *parser);
-static int FuncTypeRest(Parser *parser);
+static int FuncTypeParams(Parser *parser, typeId *types, int *count);
+static int FuncTypeRest(Parser *parser, typeId *types, int *count);
 static int FunBody(Parser *parser);
 static int Expr(Parser *parser, typeId *outType);
 static int StmtList(Parser *parser);
@@ -506,12 +506,14 @@ static int DataType(Parser *parser, typeId *outType) {
         if (result != 0)
             return result;
     } else if (Check(parser, TOKEN_LPAREN)) {
+        int paramCount = 0;
+        typeId params[64];
         typeId retType;
         int result = Advance(parser);
         if (result != 0)
             return result;
 
-        result = FuncTypeParams(parser);
+        result = FuncTypeParams(parser, params, &paramCount);
         if (result != 0)
             return result;
 
@@ -527,7 +529,7 @@ static int DataType(Parser *parser, typeId *outType) {
         if (result != 0)
             return result;
 
-        *outType = TYPE_UNDEFINED; // TODO LAMBDAS
+        result = FunctionType(params, paramCount, retType, outType);
         return result;
     } else {
         return 2;
@@ -538,9 +540,11 @@ static int DataType(Parser *parser, typeId *outType) {
 /**
  * @brief Spracovava zoznam typov v zatvorkach funkcneho typu (moze byt aj prazdny)
  * @param parser stav parsera s aktualnym tokenom
+ * @param types pole, kam sa zapisuju typy parametrov
+ * @param count adresa poctu zapisanych typov
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int FuncTypeParams(Parser *parser) {
+static int FuncTypeParams(Parser *parser, typeId *types, int *count) {
     if (Check(parser, TOKEN_RPAREN)) {
         return 0;
     } else {
@@ -548,8 +552,14 @@ static int FuncTypeParams(Parser *parser) {
         int result = DataType(parser, &type);
         if (result != 0)
             return result;
+        if(*count == 64){
+            return 99;
+        }else{
+            types[*count] = type;
+            (*count)++;
+        }
 
-        result = FuncTypeRest(parser);
+        result = FuncTypeRest(parser, types, count);
         if (result != 0)
             return result;
 
@@ -560,9 +570,11 @@ static int FuncTypeParams(Parser *parser) {
 /**
  * @brief Spracovava dalsie typy za ciarkou vo funkcnom type
  * @param parser stav parsera s aktualnym tokenom
+ * @param types pole, kam sa zapisuju typy parametrov
+ * @param count adresa poctu zapisanych typov
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
-static int FuncTypeRest(Parser *parser) {
+static int FuncTypeRest(Parser *parser, typeId *types, int *count) {
     if (Check(parser, TOKEN_COMMA)) {
         int result = Advance(parser);
         if (result != 0)
@@ -572,8 +584,14 @@ static int FuncTypeRest(Parser *parser) {
         result = DataType(parser, &type);
         if (result != 0)
             return result;
+        if (*count == 64){
+            return 99;
+        } else {
+            types[*count] = type;
+            (*count)++;
+        }
 
-        result = FuncTypeRest(parser);
+        result = FuncTypeRest(parser, types, count);
         if (result != 0)
             return result;
 

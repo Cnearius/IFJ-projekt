@@ -1,0 +1,9 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na lambdas v parseri"
+import ifj26.*
+
+def foo(x: Int): Int = x + 5
+
+@main def main(): Unit =
+    val f: (Int) => String = foo
+    print(1)
