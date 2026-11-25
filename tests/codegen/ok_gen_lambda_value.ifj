@@ -1,0 +1,8 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "test na priradenie funkcie do premennej a premennej s funkciou do dalsej premennej (LAMBDAS)"
+import ifj26.*
+def foo(x: Int): Int = x + 5
+@main def main(): Unit =
+    val f: (Int) => Int = foo
+    val g: (Int) => Int = f
+    print(1)

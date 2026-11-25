@@ -552,9 +552,9 @@ static int FuncTypeParams(Parser *parser, typeId *types, int *count) {
         int result = DataType(parser, &type);
         if (result != 0)
             return result;
-        if(*count == 64){
+        if (*count == 64) {
             return 99;
-        }else{
+        } else {
             types[*count] = type;
             (*count)++;
         }
@@ -584,7 +584,7 @@ static int FuncTypeRest(Parser *parser, typeId *types, int *count) {
         result = DataType(parser, &type);
         if (result != 0)
             return result;
-        if (*count == 64){
+        if (*count == 64) {
             return 99;
         } else {
             types[*count] = type;
@@ -1496,9 +1496,22 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_UNIT_LITERAL) {
                         result = GenPushUnit(parser->cg);
                     } else if (tokType == TOKEN_IDENT && !isCall) {
-                        // meno funkcie bez volania nie je premenna, chybu nahlasi DeclareVar
-                        if (opType == TYPE_INT || opType == TYPE_DOUBLE || opType == TYPE_STRING ||
-                            opType == TYPE_BOOLEAN || opType == TYPE_UNIT) {
+                        // meno funkcie bez volania sa pushne ako label "$meno" (LAMBDAS), premenna normalne
+                        bool isFun;
+                        result = IsFunctionName(tokName, &isFun);
+                        if (result != 0) {
+                            return result;
+                        }
+                        if (isFun) {
+                            char *label = malloc(strlen(tokName) + 2);
+                            if (label == NULL) {
+                                return 99;
+                            }
+                            label[0] = '$';
+                            strcpy(label + 1, tokName);
+                            result = GenPushString(parser->cg, label);
+                            free(label);
+                        } else {
                             result = GenPushVar(parser->cg, tokName);
                         }
                     } else if (tokType == TOKEN_IDENT && isCall && strcmp(tokName, "print") == 0) {
