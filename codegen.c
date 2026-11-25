@@ -126,6 +126,9 @@ int CodeGenInit(codeGen *cg) {
     cg->varCount = 0;
     cg->varCapacity = 0;
 
+    cg->lambdaDepth = 0;
+    cg->lambdaCounter = 0;
+
     cg->currentFunc = NULL;
 
     return 0;
@@ -159,6 +162,9 @@ void CodeGenFree(codeGen *cg) {
     cg->vars = NULL;
     cg->varCount = 0;
     cg->varCapacity = 0;
+
+    cg->lambdaDepth = 0;
+    cg->lambdaCounter = 0;
 
     cg->currentFunc = NULL;
 }
