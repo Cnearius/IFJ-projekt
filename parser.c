@@ -14,6 +14,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+//funkcie ktore patria do codegenu, zatial su tu kym ich codegen vytvori
+int GenCallVar(codeGen *cg, const char *varName);
+int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut,
+                   size_t labelSize);
+int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue);
+
 /**
  * @brief enum na druh posledneho prikazu
  */
@@ -47,10 +53,10 @@ typedef struct {
     bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
     bool inferPass;             ///< ci prave bezi inferencny prechod
     codeGen *cg;                ///< pointer na generator kodu
-    bool genCode;      ///< hovori nam ci sa v tomto prechode generuje kod (len ak je to kompletny
-                       ///< prechod)
-    bool isMainFun;    ///< ci prave spracuvame funckiu main
-    typeId curRetType; ///< navratovy typ prave spracuvanej funkcie
+    bool genCode;        ///< ci sa v tomto prechode generuje kod
+    bool isMainFun;      ///< ci prave spracuvame funckiu main
+    typeId curRetType;   ///< navratovy typ prave spracuvanej funkcie
+    bool exprEndedBlock; ///< ci posledny vyraz skoncil blokovou lambdou
 } Parser;
 
 static int Advance(Parser *parser);
@@ -71,6 +77,7 @@ static int FuncTypeParams(Parser *parser, typeId *types, int *count);
 static int FuncTypeRest(Parser *parser, typeId *types, int *count);
 static int FunBody(Parser *parser);
 static int Expr(Parser *parser, typeId *outType);
+static int LambdaExpr(Parser *parser, typeId *outType);
 static int StmtList(Parser *parser);
 static int StmtListRest(Parser *parser);
 static int LineType(Parser *parser);
@@ -185,10 +192,12 @@ static int SkipBody(Parser *parser) {
         }
 
     } else {
+        bool endsWithArrow = false;
         while (!Check(parser, TOKEN_EOL)) {
             if (Check(parser, TOKEN_EOF)) {
                 return 2;
             } else {
+                endsWithArrow = Check(parser, TOKEN_ARROW);
                 int result = Advance(parser);
                 if (result != 0)
                     return result;
@@ -197,6 +206,26 @@ static int SkipBody(Parser *parser) {
         int result = Advance(parser);
         if (result != 0)
             return result;
+
+        // telo na jednom riadku moze koncit hlavickou blokovej lambdy (...) =>
+        if (endsWithArrow && Check(parser, TOKEN_INDENT)) {
+            depth = 1;
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+            while (depth > 0) {
+                if (Check(parser, TOKEN_INDENT)) {
+                    depth++;
+                } else if (Check(parser, TOKEN_DEDENT)) {
+                    depth--;
+                } else if (Check(parser, TOKEN_EOF)) {
+                    return 2;
+                }
+                result = Advance(parser);
+                if (result != 0)
+                    return result;
+            }
+        }
     }
     return 0;
 }
@@ -618,15 +647,18 @@ static int FunHasBody(Parser *parser) {
 
         return result;
     } else {
-        // TODO A2: blokova lambda nema EOL
         typeId exprType;
         int result = Expr(parser, &exprType);
         if (result != 0)
             return result;
 
-        result = Expect(parser, TOKEN_EOL);
-        if (result != 0)
-            return result;
+        if (parser->exprEndedBlock) {
+            parser->exprEndedBlock = false;
+        } else {
+            result = Expect(parser, TOKEN_EOL);
+            if (result != 0)
+                return result;
+        }
 
         parser->lastKind = STMT_EXPR;
         parser->lastComType = exprType;
@@ -1330,6 +1362,11 @@ static int InterpString(Parser *parser, const char *text) {
                 }
             }
             i = j;
+        } else if (text[i] == '$') {
+            // Samotne '$' nie je platne, povolene je $$, $ident alebo ${vyraz} uprava z vysledkov druheho pokusneho odovzdania
+            free(piece);
+            free(name);
+            return 1;
         } else {
             piece[len] = text[i];
             len++;
@@ -1343,6 +1380,170 @@ static int InterpString(Parser *parser, const char *text) {
     }
     free(piece);
     free(name);
+    return 0;
+}
+
+/**
+ * @brief Zisti, ci aktualny token zacina lambda vyraz
+ * @param parser stav parsera s aktualnym tokenom
+ * @return true ak ide o zaciatok lambdy, inak false
+ */
+static bool IsLambdaStart(Parser *parser) {
+    if (!Check(parser, TOKEN_LPAREN)) {
+        return false;
+    }
+    if (parser->position + 2 >= parser->count) {
+        return false;
+    }
+    TokenType first = parser->fieldOfTokens[parser->position + 1].type;
+    TokenType second = parser->fieldOfTokens[parser->position + 2].type;
+    return (first == TOKEN_IDENT && second == TOKEN_COLON) ||
+           (first == TOKEN_RPAREN && second == TOKEN_ARROW);
+}
+
+/**
+ * @brief Spracuje lambda vyraz (parametre) => telo, telo moze byt vyraz alebo odsadeny blok
+ * @param parser stav parsera s aktualnym tokenom
+ * @param outType adresa kam sa zapise funkcny typ lambda vyrazu
+ * @return 0 ak OK, inak kod chyby 1/2/99
+ */
+static int LambdaExpr(Parser *parser, typeId *outType) {
+    const char *names[64];
+    typeId types[64];
+    int paramCount = 0;
+
+    int result = Expect(parser, TOKEN_LPAREN);
+    if (result != 0)
+        return result;
+
+    if (!Check(parser, TOKEN_RPAREN)) {
+        while (true) {
+            const char *name = parser->current.value;
+
+            result = Expect(parser, TOKEN_IDENT);
+            if (result != 0)
+                return result;
+
+            result = Expect(parser, TOKEN_COLON);
+            if (result != 0)
+                return result;
+
+            typeId paramType;
+            result = DataType(parser, &paramType);
+            if (result != 0)
+                return result;
+
+            if (paramCount == 64)
+                return 99;
+
+            names[paramCount] = name;
+            types[paramCount] = paramType;
+            paramCount++;
+
+            if (!Check(parser, TOKEN_COMMA))
+                break;
+
+            result = Advance(parser);
+            if (result != 0)
+                return result;
+        }
+    }
+
+    result = Expect(parser, TOKEN_RPAREN);
+    if (result != 0)
+        return result;
+
+    result = Expect(parser, TOKEN_ARROW);
+    if (result != 0)
+        return result;
+
+    result = LambdaBodyStart(names, types, paramCount);
+    if (result != 0)
+        return result;
+
+    char label[64];
+    label[0] = '\0';
+    if (parser->genCode) {
+        result = GenLambdaStart(parser->cg, names, paramCount, label, sizeof(label));
+        if (result != 0)
+            return result;
+    }
+
+    bool blockBody = Check(parser, TOKEN_EOL);
+    bool hasResult = true;
+    typeId bodyType = TYPE_UNDEFINED;
+    bool bodyLeavesValue = false;
+    bool bodyEndedBlock = false;
+
+    if (blockBody) {
+        result = Advance(parser);
+        if (result != 0)
+            return result;
+
+        parser->lastKind = STMT_NONE;
+        result = FunBody(parser);
+        if (result != 0)
+            return result;
+
+        bodyEndedBlock = true;
+        switch (parser->lastKind) {
+        case STMT_EXPR:
+            hasResult = true;
+            bodyType = parser->lastComType;
+            bodyLeavesValue = true;
+            break;
+
+        case STMT_UNIT:
+            hasResult = true;
+            bodyType = TYPE_UNIT;
+            bodyLeavesValue = false;
+            break;
+
+        case STMT_RETURN:
+            hasResult = false;
+            bodyType = TYPE_UNDEFINED;
+            bodyLeavesValue = false;
+            break;
+
+        case STMT_IF:
+            hasResult = true;
+            bodyType = parser->lastIfAllUnit ? TYPE_UNIT : TYPE_UNDEFINED;
+            bodyLeavesValue = false;
+            break;
+
+        default:
+            hasResult = true;
+            bodyType = TYPE_UNIT;
+            bodyLeavesValue = false;
+            break;
+        }
+    } else {
+        result = Expr(parser, &bodyType);
+        if (result != 0)
+            return result;
+
+        hasResult = true;
+        bodyLeavesValue = true;
+        bodyEndedBlock = parser->exprEndedBlock;
+    }
+
+    typeId funType;
+    result = LambdaBodyEnd(hasResult, bodyType, &funType);
+    if (result != 0)
+        return result;
+
+    if (parser->genCode) {
+        result = GenLambdaEnd(parser->cg, bodyLeavesValue);
+        if (result != 0)
+            return result;
+
+        result = GenPushString(parser->cg, label);
+        if (result != 0)
+            return result;
+    }
+
+    *outType = funType;
+    parser->exprEndedBlock = bodyEndedBlock;
     return 0;
 }
 
@@ -1377,6 +1578,7 @@ static int Expr(Parser *parser, typeId *outType) {
     if (result != 0)
         return result;
     int depth = 0;
+    parser->exprEndedBlock = false;
     while (true) {
         enum PrecSymbol a = TokenToPrec(parser->current.type);
         if (a == PREC_RPAREN && depth == 0) {
@@ -1384,6 +1586,9 @@ static int Expr(Parser *parser, typeId *outType) {
         }
         if (a == PREC_MINUS && !prevOperand) {
             a = PREC_UMINUS;
+        }
+        if (parser->exprEndedBlock && (a == PREC_I || a == PREC_LPAREN)) {
+            a = PREC_DOLLAR;
         }
 
         int bi = StackTopTerm(&stack);
@@ -1400,6 +1605,27 @@ static int Expr(Parser *parser, typeId *outType) {
 
         switch (PrecTable[PrecIndex(b)][PrecIndex(a)]) {
         case '<':
+            if (a == PREC_LPAREN && IsLambdaStart(parser)) {
+                result = StackInsertMark(&stack, bi);
+                if (result != 0)
+                    return result;
+
+                typeId lambdaType;
+                result = LambdaExpr(parser, &lambdaType);
+                if (result != 0)
+                    return result;
+
+                item.type = ITEM_TERM;
+                item.symbol = PREC_I;
+                item.valType = lambdaType;
+                result = StackPush(&stack, item);
+                if (result != 0)
+                    return result;
+
+                prevOperand = true;
+                break;
+            }
+
             result = StackInsertMark(&stack, bi);
             if (result != 0)
                 return result;
@@ -1449,6 +1675,7 @@ static int Expr(Parser *parser, typeId *outType) {
                 isCall = false;
             }
             if (a == PREC_I) {
+                parser->exprEndedBlock = false;
                 opType = TYPE_UNDEFINED;
                 if (tokType == TOKEN_INT_LITERAL) {
                     opType = TYPE_INT;
@@ -1543,7 +1770,16 @@ static int Expr(Parser *parser, typeId *outType) {
                         char kind = KindOfType(argTypes[0]);
                         result = GenBuiltinToStr(parser->cg, kind);
                     } else if (tokType == TOKEN_IDENT && isCall) {
-                        result = GenCall(parser->cg, tokName);
+                        bool isFun;
+                        result = IsFunctionName(tokName, &isFun);
+                        if (result != 0) {
+                            return result;
+                        }
+                        if (isFun) {
+                            result = GenCall(parser->cg, tokName);
+                        } else {
+                            result = GenCallVar(parser->cg, tokName);
+                        }
                     }
                     if (result != 0)
                         return result;
@@ -1558,6 +1794,7 @@ static int Expr(Parser *parser, typeId *outType) {
             break;
 
         case '=':
+            parser->exprEndedBlock = false;
             item.type = ITEM_TERM;
             item.symbol = a;
             item.valType = TYPE_UNDEFINED;
@@ -1578,6 +1815,13 @@ static int Expr(Parser *parser, typeId *outType) {
                 stack.FieldOfItems[stack.top - 2].valType = parenType;
             } else {
                 typeId parenType = TYPE_UNIT;
+                //ppri ().toString sa ( ) nezredukuje cez StackReduce
+                // takze Unit treba pushnut pred MemberAccess
+                if (parser->genCode && Check(parser, TOKEN_DOT)) {
+                    result = GenPushUnit(parser->cg);
+                    if (result != 0)
+                        return result;
+                }
                 result = MemberAccess(parser, &parenType);
                 if (result != 0)
                     return result;
@@ -1788,6 +2032,10 @@ static int SimpleLineRest(Parser *parser) {
 
         return result;
     } else {
+        if (parser->exprEndedBlock) { //za blokovou lambdou DEDENT nahradza EOL
+            parser->exprEndedBlock = false;
+            return 0;
+        }
         int result = Expect(parser, TOKEN_EOL);
         if (result != 0)
             return result;
