@@ -582,6 +582,30 @@ int GetVarType(const char *name, typeId *outType) {
 }
 
 /**
+ * @param name meno premennej alebo funkcie
+ * @param outIsFunction sem sa zapise true ak je meno funkcia, false ak premenna
+ * @return 0 pri uspechu
+ * @return 3 ked meno neexistuje
+ * @return 99 pri NULL vstupe
+ * @brief zisti ci meno oznacuje funkciu alebo premennu (premenna ma prednost)
+ */
+int IsFunctionName(const char *name, bool *outIsFunction) {
+    if (name == NULL || outIsFunction == NULL) {
+        return 99;
+    }
+    symbolData data;
+    if (LookupVar(rootTable, name, &data)) {
+        *outIsFunction = false;
+        return 0;
+    } else if (LookupFunction(rootTable, name, &data)) {
+        *outIsFunction = true;
+        return 0;
+    } else {
+        return 3;
+    }
+}
+
+/**
  * @param name meno funkcie
  * @param hasReturnType ci ma funkcia navratovy typ alebo nie
  * @param returnType aky navratovy typ ma funkcia, ak ho ma, ak nie, zatial sa nastavi na
