@@ -1062,6 +1062,27 @@ static int StackReduce(Parser *parser, PrecStack *stack) {
 }
 
 /**
+ * @brief Pomocna funkcia na skopirovanie cisla bez podciarkovnika
+ * @param text text
+ * @return novy string bez _ (treba uvolnit cez free), NULL ak malloc zlyha
+ */
+static char *CopyWithoutUnderscores(const char *text) {
+    char *copy = malloc(strlen(text) + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+    size_t len = 0;
+    for (size_t i = 0; i < strlen(text); i++) {
+        if (text[i] != '_') {
+            copy[len] = text[i];
+            len++;
+        }
+    }
+    copy[len] = '\0';
+    return copy;
+}
+
+/**
  * @brief Funkcia na premenu typu na pismenko ('s', 'f', 'b', 'u', 'i')
  * @param type typ
  * @return vrati 'f' pre double, 's' pre string, 'b' pre boolean, 'u' pre unit a inak 'i'
@@ -1081,9 +1102,11 @@ static char KindOfType(typeId type) {
 }
 
 /**
- * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia (n.floor.toInt)
+ * @brief Spracovava pristup k clenu .id za operandom (VALMEM), vratane retazenia
+ * (n.floor.toInt)
  * @param parser stav parsera s aktualnym tokenom
- * @param type typ toho co je pred bodkou na vstupe a na vystupe typ po pristupe k clenom (VALMEM)
+ * @param type typ toho co je pred bodkou na vstupe a na vystupe typ po pristupe k clenom
+ * (VALMEM)
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int MemberAccess(Parser *parser, typeId *type) {
@@ -1146,8 +1169,8 @@ static int FlushPiece(Parser *parser, char *piece, size_t *len) {
 }
 
 /**
- * @brief Vyhodnoti vyraz zo strinhu v tvare ${...} cez docasny lexer a Expr, potom vrati parser do
- * povodneho stavu
+ * @brief Vyhodnoti vyraz zo strinhu v tvare ${...} cez docasny lexer a Expr, potom vrati parser
+ * do povodneho stavu
  * @param parser stav parsera s aktualnym tokenom
  * @param src text vyrazu ktory dostaneme (INTERPOLATED)
  * @param outType typ vyrazu ktory dostaneme
@@ -1330,9 +1353,9 @@ static int InterpString(Parser *parser, const char *text) {
 
 /**
  * @brief Precedencna syntakticka analyza vyrazu, skonci na tokene ktory tam nepatri a ten
- * nezje. Pouziva zasobnik a precedencnu tabulku: pri < vlozi znacku a posunie token, pri > redukuje
- * podla StackReduce, pri = spoji zatvorky. Volania funkcii riesi cez CallArgs, unarne minus
- * rozlisuje podla predchadzajuceho tokenu.
+ * nezje. Pouziva zasobnik a precedencnu tabulku: pri < vlozi znacku a posunie token, pri >
+ * redukuje podla StackReduce, pri = spoji zatvorky. Volania funkcii riesi cez CallArgs, unarne
+ * minus rozlisuje podla predchadzajuceho tokenu.
  * @param parser stav parsera s aktualnym tokenom
  * @param outType adresa kam sa zapise typ vyrazu
  * @return 0 ak OK, inak kod chyby (1/2/99)
@@ -1466,9 +1489,19 @@ static int Expr(Parser *parser, typeId *outType) {
                 if (parser->genCode) {
                     result = 0;
                     if (tokType == TOKEN_INT_LITERAL) {
-                        result = GenPushInt(parser->cg, strtoll(tokName, NULL, 10));
+                        char *clean = CopyWithoutUnderscores(tokName);
+                        if (clean == NULL) {
+                            return 99;
+                        }
+                        result = GenPushInt(parser->cg, strtoll(clean, NULL, 10));
+                        free(clean);
                     } else if (tokType == TOKEN_DOUBLE_LITERAL) {
-                        result = GenPushFloat(parser->cg, strtod(tokName, NULL));
+                        char *clean = CopyWithoutUnderscores(tokName);
+                        if (clean == NULL) {
+                            return 99;
+                        }
+                        result = GenPushFloat(parser->cg, strtod(clean, NULL));
+                        free(clean);
                     } else if (tokType == TOKEN_STRING_LITERAL) {
                         result = GenPushString(parser->cg, tokName);
                     } else if (tokType == TOKEN_TRUE_LITERAL) {

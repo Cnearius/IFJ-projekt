@@ -1,0 +1,14 @@
+// Tento test vygenerovala AI (Claude).
+// Prompt: "testy na napojenie generatora kodu"
+import ifj26.*
+
+@main def main(): Unit =
+    print(1_000_000)
+    print("\n")
+    print(1_00_000)
+    print("\n")
+    print(toStr(1_000.5))
+    print("\n")
+    print(toStr(1_0e2))
+    print("\n")
+    print(1e1_0 == 10000000000.0)
