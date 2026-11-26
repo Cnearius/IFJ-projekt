@@ -8,13 +8,15 @@
  */
 
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "symtable.h"
 
 #define STEP 1
+#define SYMTABLE_MAX_LOAD_FACTOR 0.65
+#define DJB2_INITIAL_HASH 5381
+#define DJB2_SHIFT 5
 
 typedef enum { SLOT_EMPTY, SLOT_OCCUPIED, SLOT_DELETED } memSlotState;
 
@@ -84,11 +86,11 @@ static size_t GetNextPrime(size_t n) {
  * @brief hashovacia funkcia
  */
 static unsigned long DJBHash(const char *key) {
-    unsigned long hash = 5381;
+    unsigned long hash = DJB2_INITIAL_HASH;
     int c;
 
     while ((c = *key++) != '\0') {
-        hash = ((hash << 5) + hash) + c;
+        hash = ((hash << DJB2_SHIFT) + hash) + c;
     }
 
     return hash;
@@ -97,7 +99,8 @@ static unsigned long DJBHash(const char *key) {
 /**
  * @param table tabulka ktoru resizujeme
  * @return true ak sa resize podaril, false pri zlyhani alokacie
- * @brief ked je tabulka uz velmi zaplnena, v tomto pripade > 0.65, je potrebne spravit resize
+ * @brief ked je tabulka uz velmi zaplnena, v tomto pripade > SYMTABLE_MAX_LOAD_FACTOR (0,65), je
+ * potrebne spravit resize
  * aby sme neprisli o konstantnu casovu zlozitost pri vyhladavani a vkladani
  */
 static bool ResizeTable(symTable *table) {
@@ -108,7 +111,6 @@ static bool ResizeTable(symTable *table) {
 
     symTableItem *newItems = calloc(newCapacity, sizeof(symTableItem));
     if (newItems == NULL) {
-        fprintf(stderr, "Error while reallocating memory for table items\n");
         return false;
     }
     table->items = newItems;
@@ -160,7 +162,6 @@ symTable *InitTable(size_t initCapacity) {
     size_t primeCapacity = GetNextPrime(initCapacity);
     symTable *table = malloc(sizeof(symTable));
     if (table == NULL) {
-        fprintf(stderr, "Error while creating lookup table\n");
         return NULL;
     }
     table->capacity = primeCapacity;
@@ -172,7 +173,6 @@ symTable *InitTable(size_t initCapacity) {
 
     table->items = calloc(primeCapacity, sizeof(symTableItem));
     if (table->items == NULL) {
-        fprintf(stderr, "Error while allocating memory for table items\n");
         free(table);
         return NULL;
     }
@@ -214,7 +214,7 @@ static symTableItem *FindSlot(symTable *table, const char *targetKey) {
  * @brief najde kluc v konkretnej tabulke a vracia true alebo false
  * a robi kopiu hodnoty do *out ukazovatela
  */
-bool SearchItem(symTable *table, const char *key, symbolData *out) {
+static bool SearchItem(symTable *table, const char *key, symbolData *out) {
     symTableItem *slot = FindSlot(table, key);
     if (slot == NULL)
         return false;
@@ -230,7 +230,7 @@ bool SearchItem(symTable *table, const char *key, symbolData *out) {
  * @return true ak sa vlozenie podarilo, inak false
  * @brief vlozi prvok do konkretnej tabulkym vracia true ak sa operacia podarila, inak false
  */
-bool InsertItem(symTable *table, const char *key, symbolData data) {
+static bool InsertItem(symTable *table, const char *key, symbolData data) {
     // ak uz item v tabulke existuje, len prepise jeho hodnotu
     symTableItem *existing = FindSlot(table, key);
     if (existing != NULL) {
@@ -238,19 +238,18 @@ bool InsertItem(symTable *table, const char *key, symbolData data) {
         return true;
     }
     // kontrola zaplnenosti tabulky,
-    // ak je zaplnena na viac ako 0.65, je potrebny resize
+    // ak je zaplnena na viac ako SYMTABLE_MAX_LOAD_FACTOR, je potrebny resize
     // pocitaju sa aj zaslepene indexy, nech sa co najviac udrzi
     // rychlost vyhladavania
     bool isFull =
         (((double)table->count + (double)table->tombstoneCount) / ((double)table->capacity - 1) >
-         0.65);
+         SYMTABLE_MAX_LOAD_FACTOR);
     bool resizeSuccess = true;
 
     if (isFull) {
         resizeSuccess = ResizeTable(table);
     }
     if (resizeSuccess == false) {
-        fprintf(stderr, "Error while resizing table.");
         return false;
     }
     // vypocita sa index, nesmieme zabudnut na modulo
@@ -278,7 +277,6 @@ bool InsertItem(symTable *table, const char *key, symbolData data) {
         table->items[targetIndex].state = SLOT_OCCUPIED;
         table->count++;
     } else {
-        fprintf(stderr, "Couldnt find unoccupied space.");
         return false;
     }
     return true;
@@ -351,7 +349,7 @@ void FreeAllTables(symTable *table) {
 bool PushScope(symTable *table) {
     if (table == NULL)
         return false;
-    symTable *child = InitTable(23);
+    symTable *child = InitTable(SYMTABLE_INITIAL_CAPACITY);
     if (child == NULL)
         return false;
     child->parent = table->top;
@@ -368,7 +366,7 @@ bool PushScope(symTable *table) {
 bool PushLambdaScope(symTable *table) {
     if (table == NULL)
         return false;
-    symTable *child = InitTable(23);
+    symTable *child = InitTable(SYMTABLE_INITIAL_CAPACITY);
     if (child == NULL)
         return false;
     child->parent = table->top;

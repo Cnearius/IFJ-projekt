@@ -1,4 +1,5 @@
 /**
+ * Projekt: Implementace překladače imperativního jazyka IFJ26
 @file token.h
 @author Michal Caban
 @brief Tento subor obsahuje struktury pre token
