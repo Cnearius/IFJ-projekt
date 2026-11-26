@@ -16,6 +16,10 @@
 #include "types.h"
 
 #define TYPE_ID_BASE 100
+#define TYPE_STORE_INITIAL_CAPACITY 8
+#define FUNCTION_LIST_INITIAL_CAPACITY 16
+#define LAMBDA_FRAME_INITIAL_CAPACITY 8
+#define DYNAMIC_ARRAY_GROWTH_FACTOR 2
 
 typedef struct sFuncType {
     int paramCount;
@@ -71,7 +75,9 @@ static int bodyLambdaCount;
  * @return false pri zlyhani, true pri uspechu
  */
 static bool IncreaseTypeStoreSize(typeStore *types) {
-    int newCapacity = types->capacity == 0 ? 8 : types->capacity * 2;
+    int newCapacity = types->capacity == 0
+                          ? TYPE_STORE_INITIAL_CAPACITY
+                          : types->capacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
     funcType *newTypes = realloc(types->functionTypes, (size_t)newCapacity * sizeof(funcType));
     if (newTypes == NULL)
         return false;
@@ -230,7 +236,9 @@ static int RegisterFunctionInfo(const char *name, bool hasExplicitReturn) {
         return 0;
     }
     if (functionCount == functionCapacity) {
-        int newCapacity = functionCapacity == 0 ? 16 : functionCapacity * 2;
+        int newCapacity = functionCapacity == 0
+                              ? FUNCTION_LIST_INITIAL_CAPACITY
+                              : functionCapacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
         functionInfo *newList = realloc(functionList, (size_t)newCapacity * sizeof(functionInfo));
         if (newList == NULL)
             return 99;
@@ -344,83 +352,46 @@ static bool CheckTypeCompatibility(typeId has, typeId expected) {
  * funkciami
  */
 int SemAnalysisInit(void) {
-    rootTable = InitTable(23);
+    rootTable = InitTable(SYMTABLE_INITIAL_CAPACITY);
     if (rootTable == NULL)
         return 99;
-    int insertSuccess;
-    // print funkcia
-    typeId params = {TYPE_ANY};
-    insertSuccess = InsertBuiltIn("print", &params, 1, TYPE_UNIT);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // readLine funkcia
-    insertSuccess = InsertBuiltIn("readLine", NULL, 0, TYPE_STRING);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
+
+    typedef struct {
+        const char *name;
+        const typeId *params;
+        int paramCount;
+        typeId returnType;
+    } builtInSpec;
+
+    static const typeId anyParam[] = {TYPE_ANY};
+    static const typeId doubleParam[] = {TYPE_DOUBLE};
+    static const typeId stringParam[] = {TYPE_STRING};
+    static const typeId intParam[] = {TYPE_INT};
+    static const typeId subStrParams[] = {TYPE_STRING, TYPE_INT, TYPE_INT};
+    static const typeId ordParams[] = {TYPE_STRING, TYPE_INT};
+
+    static const builtInSpec builtIns[] = {
+        {"print", anyParam, 1, TYPE_UNIT},
+        {"readLine", NULL, 0, TYPE_STRING},
+        {"readInt", NULL, 0, TYPE_INT},
+        {"readDouble", NULL, 0, TYPE_DOUBLE},
+        {"toStr", anyParam, 1, TYPE_STRING},
+        {"toInt", doubleParam, 1, TYPE_INT},
+        {"strLength", stringParam, 1, TYPE_INT},
+        {"subStr", subStrParams, 3, TYPE_STRING},
+        {"ord", ordParams, 2, TYPE_INT},
+        {"chr", intParam, 1, TYPE_STRING},
+        {"readBoolean", NULL, 0, TYPE_BOOLEAN},
+    };
+
+    for (size_t i = 0; i < sizeof(builtIns) / sizeof(builtIns[0]); i++) {
+        if (InsertBuiltIn(builtIns[i].name, builtIns[i].params, builtIns[i].paramCount,
+                          builtIns[i].returnType) == 99) {
+            SemAnalysisFree();
+            return 99;
+        }
     }
 
-    // readInt funkcia
-    insertSuccess = InsertBuiltIn("readInt", NULL, 0, TYPE_INT);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // readDouble funkcia
-    insertSuccess = InsertBuiltIn("readDouble", NULL, 0, TYPE_DOUBLE);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // toStr funkcia
-    insertSuccess = InsertBuiltIn("toStr", &params, 1, TYPE_STRING);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // toInt funkcia
-    params = TYPE_DOUBLE;
-    insertSuccess = InsertBuiltIn("toInt", &params, 1, TYPE_INT);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // strLength funkcia
-    params = TYPE_STRING;
-    insertSuccess = InsertBuiltIn("strLength", &params, 1, TYPE_INT);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // subStr funkcia
-    typeId subStrParams[3] = {TYPE_STRING, TYPE_INT, TYPE_INT};
-    insertSuccess = InsertBuiltIn("subStr", subStrParams, 3, TYPE_STRING);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // ord funkcia
-    typeId ordParams[2] = {TYPE_STRING, TYPE_INT};
-    insertSuccess = InsertBuiltIn("ord", ordParams, 2, TYPE_INT);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // chr funkcia
-    typeId chrParams = {TYPE_INT};
-    insertSuccess = InsertBuiltIn("chr", &chrParams, 1, TYPE_STRING);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
-    // readBoolean funkcia
-    insertSuccess = InsertBuiltIn("readBoolean", NULL, 0, TYPE_BOOLEAN);
-    if (insertSuccess == 99) {
-        SemAnalysisFree();
-        return 99;
-    }
     mainAlreadyDefined = false;
     blockDepth = 0;
     bodyBlockDepth = 0;
@@ -848,7 +819,9 @@ int FuncBodyStart(const char *name, const char **paramNames, const typeId *param
  * @brief zvacsi pole lambda framov a pri zlyhani ostava pole aj kapacita bez zmeny
  */
 static bool IncreaseLambdaFrameStore(void) {
-    int newCapacity = lambdaFrameCapacity == 0 ? 8 : lambdaFrameCapacity * 2;
+    int newCapacity = lambdaFrameCapacity == 0
+                          ? LAMBDA_FRAME_INITIAL_CAPACITY
+                          : lambdaFrameCapacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
     lambdaFrame *newFrames = realloc(lambdaFrames, (size_t)newCapacity * sizeof(lambdaFrame));
     if (newFrames == NULL)
         return false;
@@ -1316,24 +1289,24 @@ int GetFunctionSignature(const char *name, typeId *typeArr, const int arrSize, i
     }
 
     switch (retType) {
-    case 0:
+    case TYPE_UNDEFINED:
         return 6;
-    case 1:
+    case TYPE_INT:
         *returnType = TYPE_INT;
         break;
-    case 2:
+    case TYPE_DOUBLE:
         *returnType = TYPE_DOUBLE;
         break;
-    case 3:
+    case TYPE_STRING:
         *returnType = TYPE_STRING;
         break;
-    case 4:
+    case TYPE_BOOLEAN:
         *returnType = TYPE_BOOLEAN;
         break;
-    case 5:
+    case TYPE_UNIT:
         *returnType = TYPE_UNIT;
         break;
-    case 6:
+    case TYPE_ANY:
         *returnType = TYPE_ANY;
         break;
     default:
