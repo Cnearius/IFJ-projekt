@@ -14,6 +14,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_PARAMS 64                 ///< maximalny pocet parametrov a argumentov funkcie
+#define TOKEN_BUFFER_INIT_CAPACITY 64 ///< zaciatocna kapacita pola tokenov
+#define MAX_LABEL_LEN 64              ///< maximalna dlzka navestia lambdy
+#define PREC_STACK_SIZE 256           ///< velkost zasobnika precedencnej analyzy
+#define PROLOG_NAME "ifj26"           ///< meno v prologu import ifj26.*
+
 /**
  * @brief enum na druh posledneho prikazu
  */
@@ -30,27 +36,27 @@ enum StmtKind {
  * prace pametat
  */
 typedef struct {
-    Lexer *lexer;               ///< lexer z ktoreho parser berie tokeny
-    Token current;              ///< konkretny token ktory parser aktualne kontroluje
-    size_t prevLine;            ///< riadok predchadzajuceho tokenu
-    size_t tokenCount;          ///< pocet zjedenych tokenov
-    Token *fieldOfTokens;       ///< vsetky tokeny zo vstupu za sebou
-    size_t count;               ///< kolko tokenov v poli naozaj je
-    size_t capacity;            ///< na kolko tokenov je pamet zatial alokovana
-    size_t position;            ///< index tokenu ktory je prave v current
-    typeId paramTypes[64];      ///< pole na typy parametrov aktualnej funkcie
-    const char *paramNames[64]; ///< pole na mena parametrov aktualnej funkcie
-    int paramCount;             ///< pocet parametrov aktualnej funkcie
-    enum StmtKind lastKind;     ///< druh posledneho vyrazu
-    typeId lastComType;         ///< typ posledneho vyrazu
-    bool lastIfAllReturn;       ///< ci vsetky vetvy posledneho if koncia returnom
-    bool lastIfAllUnit;         ///< ci vsetky vetvy posledneho if koncia Unit
-    bool inferPass;             ///< ci prave bezi inferencny prechod
-    codeGen *cg;                ///< pointer na generator kodu
-    bool genCode;        ///< ci sa v tomto prechode generuje kod
-    bool isMainFun;      ///< ci prave spracuvame funckiu main
-    typeId curRetType;   ///< navratovy typ prave spracuvanej funkcie
-    bool exprEndedBlock; ///< ci posledny vyraz skoncil blokovou lambdou
+    Lexer *lexer;                       ///< lexer z ktoreho parser berie tokeny
+    Token current;                      ///< konkretny token ktory parser aktualne kontroluje
+    size_t prevLine;                    ///< riadok predchadzajuceho tokenu
+    size_t tokenCount;                  ///< pocet zjedenych tokenov
+    Token *fieldOfTokens;               ///< vsetky tokeny zo vstupu za sebou
+    size_t count;                       ///< kolko tokenov v poli naozaj je
+    size_t capacity;                    ///< na kolko tokenov je pamet zatial alokovana
+    size_t position;                    ///< index tokenu ktory je prave v current
+    typeId paramTypes[MAX_PARAMS];      ///< pole na typy parametrov aktualnej funkcie
+    const char *paramNames[MAX_PARAMS]; ///< pole na mena parametrov aktualnej funkcie
+    int paramCount;                     ///< pocet parametrov aktualnej funkcie
+    enum StmtKind lastKind;             ///< druh posledneho vyrazu
+    typeId lastComType;                 ///< typ posledneho vyrazu
+    bool lastIfAllReturn;               ///< ci vsetky vetvy posledneho if koncia returnom
+    bool lastIfAllUnit;                 ///< ci vsetky vetvy posledneho if koncia Unit
+    bool inferPass;                     ///< ci prave bezi inferencny prechod
+    codeGen *cg;                        ///< pointer na generator kodu
+    bool genCode;                       ///< ci sa v tomto prechode generuje kod
+    bool isMainFun;                     ///< ci prave spracuvame funckiu main
+    typeId curRetType;                  ///< navratovy typ prave spracuvanej funkcie
+    bool exprEndedBlock;                ///< ci posledny vyraz skoncil blokovou lambdou
 } Parser;
 
 static int Advance(Parser *parser);
@@ -105,7 +111,7 @@ static int FillBuffer(Parser *parser) {
     while (true) {
         if (parser->count == newCapacity) {
             if (newCapacity == 0) {
-                newCapacity = 64;
+                newCapacity = TOKEN_BUFFER_INIT_CAPACITY;
             } else {
                 newCapacity = 2 * newCapacity;
             }
@@ -239,7 +245,7 @@ static int HeaderPass(Parser *parser) {
 
     if (!Check(parser, TOKEN_IDENT)) {
         return 2;
-    } else if (strcmp(parser->current.value, "ifj26") != 0) {
+    } else if (strcmp(parser->current.value, PROLOG_NAME) != 0) {
         return 2;
     }
     result = Advance(parser);
@@ -388,7 +394,7 @@ static int RestParams(Parser *parser) {
         if (result != 0)
             return result;
 
-        if (parser->paramCount == 64) {
+        if (parser->paramCount == MAX_PARAMS) {
             return 99;
         } else {
             parser->paramNames[parser->paramCount] = name;
@@ -454,7 +460,7 @@ static int ParamAfterComma(Parser *parser) {
         if (result != 0)
             return result;
 
-        if (parser->paramCount == 64) {
+        if (parser->paramCount == MAX_PARAMS) {
             return 99;
         } else {
             parser->paramNames[parser->paramCount] = name;
@@ -530,7 +536,7 @@ static int DataType(Parser *parser, typeId *outType) {
             return result;
     } else if (Check(parser, TOKEN_LPAREN)) {
         int paramCount = 0;
-        typeId params[64];
+        typeId params[MAX_PARAMS];
         typeId retType;
         int result = Advance(parser);
         if (result != 0)
@@ -575,7 +581,7 @@ static int FuncTypeParams(Parser *parser, typeId *types, int *count) {
         int result = DataType(parser, &type);
         if (result != 0)
             return result;
-        if (*count == 64) {
+        if (*count == MAX_PARAMS) {
             return 99;
         } else {
             types[*count] = type;
@@ -607,7 +613,7 @@ static int FuncTypeRest(Parser *parser, typeId *types, int *count) {
         result = DataType(parser, &type);
         if (result != 0)
             return result;
-        if (*count == 64) {
+        if (*count == MAX_PARAMS) {
             return 99;
         } else {
             types[*count] = type;
@@ -710,7 +716,7 @@ enum PrecSymbol {
 /**
  * @brief Precedencna tabulka od Michala, riadok je terminal na zasobniku, stlpec je vstup
  */
-static const char PrecTable[17][17] = {
+static const char PrecTable[PREC_DOLLAR + 1][PREC_DOLLAR + 1] = {
     {' ', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', ' ', ' ', '>', '>'},
     {'<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
     {'<', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '>', '<', '<', '>', '>'},
@@ -832,7 +838,7 @@ typedef struct {
  * @brief Zasobnik precedencnej analyzy
  */
 typedef struct {
-    StackItem FieldOfItems[256];
+    StackItem FieldOfItems[PREC_STACK_SIZE];
     int top;
 } PrecStack;
 
@@ -857,7 +863,7 @@ static int StackTopTerm(PrecStack *stack) {
  * @return 0 alebo 99
  */
 static int StackPush(PrecStack *stack, StackItem item) {
-    if (stack->top == 256) {
+    if (stack->top == PREC_STACK_SIZE) {
         return 99;
     } else {
         stack->FieldOfItems[stack->top] = item;
@@ -873,7 +879,7 @@ static int StackPush(PrecStack *stack, StackItem item) {
  * @return 0 alebo 99
  */
 static int StackInsertMark(PrecStack *stack, int termIndex) {
-    if (stack->top == 256) {
+    if (stack->top == PREC_STACK_SIZE) {
         return 99;
     }
     for (int i = stack->top - 1; i >= termIndex + 1; i--) {
@@ -1380,7 +1386,8 @@ static int InterpString(Parser *parser, const char *text) {
             }
             i = j;
         } else if (text[i] == '$') {
-            // Samotne '$' nie je platne, povolene je $$, $ident alebo ${vyraz} uprava z vysledkov druheho pokusneho odovzdania
+            // Samotne '$' nie je platne, povolene je $$, $ident alebo ${vyraz} uprava z vysledkov
+            // druheho pokusneho odovzdania
             free(piece);
             free(name);
             return 1;
@@ -1425,8 +1432,8 @@ static bool IsLambdaStart(Parser *parser) {
  * @return 0 ak OK, inak kod chyby 1/2/99
  */
 static int LambdaExpr(Parser *parser, typeId *outType) {
-    const char *names[64];
-    typeId types[64];
+    const char *names[MAX_PARAMS];
+    typeId types[MAX_PARAMS];
     int paramCount = 0;
 
     int result = Expect(parser, TOKEN_LPAREN);
@@ -1450,7 +1457,7 @@ static int LambdaExpr(Parser *parser, typeId *outType) {
             if (result != 0)
                 return result;
 
-            if (paramCount == 64)
+            if (paramCount == MAX_PARAMS)
                 return 99;
 
             names[paramCount] = name;
@@ -1478,7 +1485,7 @@ static int LambdaExpr(Parser *parser, typeId *outType) {
     if (result != 0)
         return result;
 
-    char label[64];
+    char label[MAX_LABEL_LEN];
     label[0] = '\0';
     if (parser->genCode) {
         result = GenLambdaStart(parser->cg, names, paramCount, label, sizeof(label));
@@ -1574,7 +1581,7 @@ static int LambdaExpr(Parser *parser, typeId *outType) {
  * @return 0 ak OK, inak kod chyby (1/2/99)
  */
 static int Expr(Parser *parser, typeId *outType) {
-    typeId argTypes[64];
+    typeId argTypes[MAX_PARAMS];
     int argCount;
     bool prevOperand = false;
     bool isIdent;
@@ -1588,7 +1595,7 @@ static int Expr(Parser *parser, typeId *outType) {
     item.type = ITEM_TERM;
     item.symbol = PREC_DOLLAR;
     item.valType = TYPE_UNDEFINED;
-    typeId sigTypes[64];
+    typeId sigTypes[MAX_PARAMS];
     int sigCount;
     typeId sigRet;
     int result = StackPush(&stack, item);
@@ -1677,7 +1684,7 @@ static int Expr(Parser *parser, typeId *outType) {
                 isCall = true;
                 sigCount = 0;
                 if (parser->genCode) {
-                    int sig = GetFunctionSignature(tokName, sigTypes, 64, &sigCount, &sigRet);
+                    int sig = GetFunctionSignature(tokName, sigTypes, MAX_PARAMS, &sigCount, &sigRet);
                     if (sig == 99) {
                         return 99;
                     }
@@ -1750,7 +1757,8 @@ static int Expr(Parser *parser, typeId *outType) {
                     } else if (tokType == TOKEN_UNIT_LITERAL) {
                         result = GenPushUnit(parser->cg);
                     } else if (tokType == TOKEN_IDENT && !isCall) {
-                        // meno funkcie bez volania sa pushne ako label "$meno" (LAMBDAS), premenna normalne
+                        // meno funkcie bez volania sa pushne ako label "$meno" (LAMBDAS), premenna
+                        // normalne
                         bool isFun;
                         result = IsFunctionName(tokName, &isFun);
                         if (result != 0) {
@@ -1842,8 +1850,8 @@ static int Expr(Parser *parser, typeId *outType) {
                 stack.FieldOfItems[stack.top - 2].valType = parenType;
             } else {
                 typeId parenType = TYPE_UNIT;
-                //ppri ().toString sa ( ) nezredukuje cez StackReduce
-                // takze Unit treba pushnut pred MemberAccess
+                // ppri ().toString sa ( ) nezredukuje cez StackReduce
+                //  takze Unit treba pushnut pred MemberAccess
                 if (parser->genCode && Check(parser, TOKEN_DOT)) {
                     result = GenPushUnit(parser->cg);
                     if (result != 0)
@@ -1902,7 +1910,7 @@ static int CallArgs(Parser *parser, typeId *argTypes, int *argCount, const typeI
                 return result;
         }
 
-        if (*argCount == 64) {
+        if (*argCount == MAX_PARAMS) {
             return 99;
         } else {
             argTypes[*argCount] = exprType;
@@ -2059,7 +2067,7 @@ static int SimpleLineRest(Parser *parser) {
 
         return result;
     } else {
-        if (parser->exprEndedBlock) { //za blokovou lambdou DEDENT nahradza EOL
+        if (parser->exprEndedBlock) { // za blokovou lambdou DEDENT nahradza EOL
             parser->exprEndedBlock = false;
             return 0;
         }
@@ -2811,7 +2819,7 @@ static int Program(Parser *parser) {
 
     if (!Check(parser, TOKEN_IDENT)) {
         return 2;
-    } else if (strcmp(parser->current.value, "ifj26") != 0) {
+    } else if (strcmp(parser->current.value, PROLOG_NAME) != 0) {
         return 2;
     }
     result = Advance(parser);
