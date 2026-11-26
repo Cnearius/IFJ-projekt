@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#define SYMTABLE_INITIAL_CAPACITY 23
+
 typedef struct tSymbolData {
     typeId type;
     bool isFunction;
@@ -22,9 +24,7 @@ typedef struct tSymTable symTable;
 
 // prototypy funkcii
 symTable *InitTable(size_t initCapacity);
-bool InsertItem(symTable *table, const char *key, symbolData data);
 bool DeleteItem(symTable *table, const char *key);
-bool SearchItem(symTable *table, const char *key, symbolData *out);
 // scope pre hashtable
 void FreeAllTables(symTable *table);
 bool PushScope(symTable *table);
