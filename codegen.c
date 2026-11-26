@@ -139,6 +139,24 @@ int CodeGenInit(codeGen *cg) {
  * @brief uvolnenie pamate struktury generatora
  */
 void CodeGenFree(codeGen *cg) {
+
+    // Uvolnenie vsetkych rozpracovanych vonkajsich funkcii
+    for (int d = 0; d < cg->lambdaDepth; d++) {
+        LambdaSavedState *s = &cg->lambdaStack[d];
+
+        StrBufferFree(&s->funHeader);
+        StrBufferFree(&s->funBody);
+
+        for (int i = 0; i < s->varCount; i++) {
+            free(s->vars[i].name);
+            free(s->vars[i].unique);
+        }
+        free(s->vars);
+        s->vars = NULL;
+        s->varCount = 0;
+        s->varCapacity = 0;
+    }
+
     StrBufferFree(&cg->out);
     StrBufferFree(&cg->funBody);
     StrBufferFree(&cg->funHeader);
@@ -998,26 +1016,30 @@ int GenWhileEnd(codeGen *cg) {
     return 0;
 }
 
-
 /**
  * @param cg ukazovatel na datovu strukturu generatora kodu
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre zaciatok porovnavania AND
- */ 
+ */
 int GenAndStart(codeGen *cg) {
-    if (!cg) return 99;
-    if (cg->labelStackTop >= INIT_SIZE) return Return99CodeGen(cg);
+    if (!cg)
+        return 99;
+    if (cg->labelStackTop >= INIT_SIZE)
+        return Return99CodeGen(cg);
 
-    int id = cg->labelCounter++;
+    int id = ++cg->labelCounter;
     cg->labelStack[cg->labelStackTop++] = id;
 
-    char buf[INIT_SIZE*2];
+    char buf[INIT_SIZE_256];
     int written = snprintf(buf, sizeof(buf),
-                    "PUSHS bool@false\n"
-                    "JUMPIFEQS $and_false$%d\n", id);
+                           "PUSHS bool@false\n"
+                           "JUMPIFEQS $and_false$%d\n",
+                           id);
 
-    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
-    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    if (written < 0 || (size_t)written >= sizeof(buf))
+        return Return99CodeGen(cg);
+    if (StrBufferAppend(&cg->funBody, buf) != 0)
+        return Return99CodeGen(cg);
     return 0;
 }
 
@@ -1025,46 +1047,54 @@ int GenAndStart(codeGen *cg) {
  * @param cg ukazovatel na datovu strukturu generatora kodu
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre koniec porovnavania AND
- */ 
+ */
 int GenAndEnd(codeGen *cg) {
-    if (!cg) return 99;
-    if (cg->labelStackTop <= 0) return Return99CodeGen(cg);
+    if (!cg)
+        return 99;
+    if (cg->labelStackTop <= 0)
+        return Return99CodeGen(cg);
 
     int id = cg->labelStack[--cg->labelStackTop];
 
-    char buf[INIT_SIZE*2];
+    char buf[INIT_SIZE_256];
     int written = snprintf(buf, sizeof(buf),
-                            "JUMP $and_end$%d\n"
-                            "LABEL $and_false$%d\n"
-                            "PUSHS bool@false\n"
-                            "LABEL $and_end$%d\n",
-                            id, id, id);
+                           "JUMP $and_end$%d\n"
+                           "LABEL $and_false$%d\n"
+                           "PUSHS bool@false\n"
+                           "LABEL $and_end$%d\n",
+                           id, id, id);
 
-    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
-    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    if (written < 0 || (size_t)written >= sizeof(buf))
+        return Return99CodeGen(cg);
+    if (StrBufferAppend(&cg->funBody, buf) != 0)
+        return Return99CodeGen(cg);
     return 0;
 }
-
 
 /**
  * @param cg ukazovatel na datovu strukturu generatora kodu
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre zaciatok porovnavania OR
- */ 
+ */
 int GenOrStart(codeGen *cg) {
-    if (!cg) return 99;
-    if (cg->labelStackTop >= INIT_SIZE) return Return99CodeGen(cg);
+    if (!cg)
+        return 99;
+    if (cg->labelStackTop >= INIT_SIZE)
+        return Return99CodeGen(cg);
 
-    int id = cg->labelCounter++;
+    int id = ++cg->labelCounter;
     cg->labelStack[cg->labelStackTop++] = id;
 
-    char buf[INIT_SIZE*2];
+    char buf[INIT_SIZE_256];
     int written = snprintf(buf, sizeof(buf),
-                    "PUSHS bool@true\n"
-                    "JUMPIFEQS $or_true$%d\n", id);
+                           "PUSHS bool@true\n"
+                           "JUMPIFEQS $or_true$%d\n",
+                           id);
 
-    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
-    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    if (written < 0 || (size_t)written >= sizeof(buf))
+        return Return99CodeGen(cg);
+    if (StrBufferAppend(&cg->funBody, buf) != 0)
+        return Return99CodeGen(cg);
     return 0;
 }
 
@@ -1072,23 +1102,27 @@ int GenOrStart(codeGen *cg) {
  * @param cg ukazovatel na datovu strukturu generatora kodu
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre koniec porovnavania OR
- */ 
+ */
 int GenOrEnd(codeGen *cg) {
-    if (!cg) return 99;
-    if (cg->labelStackTop <= 0) return Return99CodeGen(cg);
+    if (!cg)
+        return 99;
+    if (cg->labelStackTop <= 0)
+        return Return99CodeGen(cg);
 
     int id = cg->labelStack[--cg->labelStackTop];
 
-    char buf[INIT_SIZE*2];
+    char buf[INIT_SIZE_256];
     int written = snprintf(buf, sizeof(buf),
-                            "JUMP $or_end$%d\n"
-                            "LABEL $or_true$%d\n"
-                            "PUSHS bool@true\n"
-                            "LABEL $or_end$%d\n",
-                            id, id, id);
+                           "JUMP $or_end$%d\n"
+                           "LABEL $or_true$%d\n"
+                           "PUSHS bool@true\n"
+                           "LABEL $or_end$%d\n",
+                           id, id, id);
 
-    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);                         
-    if (StrBufferAppend(&cg->funBody, buf) != 0) return Return99CodeGen(cg);
+    if (written < 0 || (size_t)written >= sizeof(buf))
+        return Return99CodeGen(cg);
+    if (StrBufferAppend(&cg->funBody, buf) != 0)
+        return Return99CodeGen(cg);
     return 0;
 }
 
@@ -1106,7 +1140,7 @@ static int GenBuiltinRead(codeGen *cg, const char *type, const char *defVal) {
         return 99;
 
     int id = ++cg->labelCounter;
-    char buf[INIT_SIZE*2];
+    char buf[INIT_SIZE_256];
 
     // Vygenerovanie navestidla - pokial je nacitana hodnota NULL, tak je ulozena prislusna nulova
     // hodnota
@@ -1148,9 +1182,8 @@ int GenBuiltinReadLine(codeGen *cg) { return GenBuiltinRead(cg, "string", "strin
  * @param cg ukazovatel na datovu strukturu generatora kodu
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre nacitanie string
- */ 
+ */
 int GenBuiltinReadBool(codeGen *cg) { return GenBuiltinRead(cg, "bool", "bool@false"); }
-
 
 /**
  * @param cg ukazovatel na datovu strukturu generatora kodu
@@ -1203,23 +1236,25 @@ int GenBuiltinToStr(codeGen *cg, char kind) {
 
     if (kind == 'b') {
         int id = ++cg->labelCounter;
-        char buff[INIT_SIZE*2];
+        char buff[INIT_SIZE_256];
 
-        //Pokial je na vrchole zasobnika true - pushni string "true", inak pushni string "false"
+        // Pokial je na vrchole zasobnika true - pushni string "true", inak pushni string "false"
         snprintf(buff, sizeof(buff),
-                "PUSHS bool@true\n"
-                "JUMPIFEQS $toStr_true$%d\n"
-                "PUSHS string@false\n"
-                "JUMP $toStr_bool_end$%d\n"
-                "LABEL $toStr_true$%d\n"
-                "PUSHS string@true\n"
-                "LABEL $toStr_bool_end$%d\n", id, id, id, id);
+                 "PUSHS bool@true\n"
+                 "JUMPIFEQS $toStr_true$%d\n"
+                 "PUSHS string@false\n"
+                 "JUMP $toStr_bool_end$%d\n"
+                 "LABEL $toStr_true$%d\n"
+                 "PUSHS string@true\n"
+                 "LABEL $toStr_bool_end$%d\n",
+                 id, id, id, id);
 
-        if (StrBufferAppend(&cg->funBody, buff) != 0) return Return99CodeGen(cg);
+        if (StrBufferAppend(&cg->funBody, buff) != 0)
+            return Return99CodeGen(cg);
         return 0;
     }
 
-    //Ak ide o Unit
+    // Ak ide o Unit
     if (kind == 'u') {
         if (StrBufferAppend(&cg->funBody, "POPS GF@%discard\n"
                                           "PUSHS string@()\n") != 0) {
@@ -1298,7 +1333,7 @@ int GenBuiltinOrd(codeGen *cg) {
         return 99;
 
     int id = ++cg->labelCounter;
-    char buf[INIT_SIZE * 8];
+    char buf[INIT_SIZE_1024];
     int written = snprintf(buf, sizeof(buf),
                            "POPS GF@%%tmp1\n" // tmp1 = index
                            "POPS GF@%%tmp2\n" // tmp2 = value
@@ -1338,7 +1373,7 @@ int GenBuiltinSubStr(codeGen *cg) {
         return 99;
 
     int id = ++cg->labelCounter;
-    char buf[INIT_SIZE * 9];
+    char buf[INIT_SIZE_2048];
     int written = snprintf(buf, sizeof(buf),
                            "POPS GF@%%tmp1\n"             // tmp1 = end
                            "POPS GF@%%tmp2\n"             // tmp2 = start
@@ -1377,72 +1412,93 @@ int GenBuiltinSubStr(codeGen *cg) {
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre built-in funkciu floor z rozsirenia VALMEM
+ */
 int GenBuiltinFloor(codeGen *cg) {
-    if (cg == NULL) return 99;
+    if (cg == NULL)
+        return 99;
 
     int id = ++cg->labelCounter;
-    char buf[INIT_SIZE*8];
+    char buf[INIT_SIZE_1024];
     int written = snprintf(buf, sizeof(buf),
-            "POPS GF@%%tmp2\n"                          //tmp2=povodny float
-            "FLOAT2INT GF@%%tmp1 GF@%%tmp2\n"           //oseknutie k nule
-            "INT2FLOAT GF@%%tmp1 GF@%%tmp1\n"           //spat na float
-            "PUSHS GF@%%tmp2\n"
-            "PUSHS GF@%%tmp1\n"
-            "LTS\n"                                     //povodny < oseknuty
-            "PUSHS bool@true\n"
-            "JUMPIFEQS $floor_dec$%d\n"
-            "JUMP $floor_end$%d\n"
-            "LABEL $floor_dec$%d\n"
-            "SUB GF@%%tmp1 GF@%%tmp1 float@0x1p+0\n"    //-1 pre zaporne desatinne cisla
-            "LABEL $floor_end$%d\n"
-            "PUSHS GF@%%tmp1\n",
-            id, id, id, id);
+                           "POPS GF@%%tmp2\n"                // tmp2=povodny float
+                           "FLOAT2INT GF@%%tmp1 GF@%%tmp2\n" // oseknutie k nule
+                           "INT2FLOAT GF@%%tmp1 GF@%%tmp1\n" // spat na float
+                           "PUSHS GF@%%tmp2\n"
+                           "PUSHS GF@%%tmp1\n"
+                           "LTS\n" // povodny < oseknuty
+                           "PUSHS bool@true\n"
+                           "JUMPIFEQS $floor_dec$%d\n"
+                           "JUMP $floor_end$%d\n"
+                           "LABEL $floor_dec$%d\n"
+                           "SUB GF@%%tmp1 GF@%%tmp1 float@0x1p+0\n" //-1 pre zaporne desatinne cisla
+                           "LABEL $floor_end$%d\n"
+                           "PUSHS GF@%%tmp1\n",
+                           id, id, id, id);
 
-    if (written < 0 || (size_t)written >= sizeof(buf) ||
-        StrBufferAppend(&cg->funBody, buf) != 0) {
+    if (written < 0 || (size_t)written >= sizeof(buf) || StrBufferAppend(&cg->funBody, buf) != 0) {
         return Return99CodeGen(cg);
     }
     return 0;
 }
 
-
-
 /* ---------- Rozsirenie LAMBDAS ---------- */
 
 /**
  * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param varName nazov premennej
  * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
  * @brief generacia kodu pre volanie premennej s funkcnou hodnotou
  */
 int GenCallVar(codeGen *cg, const char *varName) {
-    
-    if (!cg || !varName) return Return99CodeGen(cg);
+
+    if (!cg || !varName)
+        return Return99CodeGen(cg);
 
     const char *uniqueName = FindUniqueVar(cg, varName);
-    if (!uniqueName) return Return99CodeGen(cg);
+    if (!uniqueName)
+        return Return99CodeGen(cg);
 
     char buf[INIT_SIZE];
     int written = snprintf(buf, sizeof(buf), "CALL LF@%s\n", uniqueName);
-    
-    if (written < 0 || (size_t)written >= sizeof(buf)) return Return99CodeGen(cg);
 
-    if (StrBufferAppend(&cg->funBody, buf)) return Return99CodeGen(cg);
+    if (written < 0 || (size_t)written >= sizeof(buf))
+        return Return99CodeGen(cg);
+
+    if (StrBufferAppend(&cg->funBody, buf))
+        return Return99CodeGen(cg);
 
     return 0;
 }
 
-int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut, size_t labelSize) {
-    if (!cg) return Return99CodeGen(cg);
-    if (paramCount > 0 && !params) return Return99CodeGen(cg);
-    if (cg->lambdaDepth >= LAMBDA_STACK_SIZE) return Return99CodeGen(cg);
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param params ukazovatel na pole parametrov anonymnej funkcie
+ * @param paramCount pocet parametrov
+ * @param labelOut buffer do ktoreho sa zapise vygenerovany label
+ * @param labelSize velkost bufferu labelOut
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre zaciatok konstrukcie LAMBDAS
+ */
+int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut,
+                   size_t labelSize) {
+    if (!cg)
+        return Return99CodeGen(cg);
+    if (paramCount > 0 && !params)
+        return Return99CodeGen(cg);
+    if (cg->lambdaDepth >= LAMBDA_STACK_SIZE)
+        return Return99CodeGen(cg);
 
     int id = cg->lambdaCounter++;
 
     char label[INIT_SIZE];
-    int lblWritten = snprintf(label, sizeof(label),
-                            "$%%lambda_%d", id);
+    int lblWritten = snprintf(label, sizeof(label), "$%%lambda_%d", id);
 
-    if (lblWritten < 0 || (size_t)lblWritten >= sizeof(label)) return Return99CodeGen(cg);
+    if (lblWritten < 0 || (size_t)lblWritten >= sizeof(label))
+        return Return99CodeGen(cg);
 
     int outWritten = snprintf(labelOut, labelSize, "%s", label);
     if (outWritten < 0 || (size_t)outWritten >= labelSize) {
@@ -1451,12 +1507,14 @@ int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *label
 
     LambdaSavedState *saved = &cg->lambdaStack[cg->lambdaDepth];
 
-    //Ulozenie stavu vonkajsej funkcie
+    // Ulozenie stavu vonkajsej funkcie
     saved->funHeader = cg->funHeader;
     saved->funBody = cg->funBody;
     saved->currentFunc = cg->currentFunc;
-    saved->vars = cg->vars; saved->varCount = cg->varCount; saved->varCapacity = cg->varCapacity;
-    
+    saved->vars = cg->vars;
+    saved->varCount = cg->varCount;
+    saved->varCapacity = cg->varCapacity;
+
     memcpy(saved->activeScopes, cg->activeScopes, sizeof(int) * (size_t)cg->scopeDepth);
     saved->scopeDepth = cg->scopeDepth;
 
@@ -1465,19 +1523,33 @@ int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *label
 
     saved->nextScopeId = cg->nextScopeId;
 
-    if (StrBufferInit(&cg->funHeader) != 0) return Return99CodeGen(cg);
-    if (StrBufferInit(&cg->funBody) != 0) return Return99CodeGen(cg);
+    // Vynulovanie cg
+    cg->funHeader.data = NULL;
+    cg->funHeader.length = 0;
+    cg->funHeader.capacity = 0;
+    cg->funBody.data = NULL;
+    cg->funBody.length = 0;
+    cg->funBody.capacity = 0;
+    cg->vars = NULL;
+    cg->varCount = 0;
+    cg->varCapacity = 0;
     cg->currentFunc = NULL;
-    cg->vars = NULL; cg->varCount = 0; cg->varCapacity = 0;
     cg->labelStackTop = 0;
+    cg->scopeDepth = 0;
+
+    cg->lambdaDepth++;
+
+    if (StrBufferInit(&cg->funHeader) != 0)
+        return Return99CodeGen(cg);
+    if (StrBufferInit(&cg->funBody) != 0)
+        return Return99CodeGen(cg);
+
     cg->nextScopeId++;
     cg->activeScopes[0] = cg->nextScopeId;
     cg->scopeDepth = 1;
 
-    cg->lambdaDepth++;
-
-    //Hlavicka ramca lambdy
-    char headerBuf[INIT_SIZE*2];
+    // Hlavicka ramca lambdy
+    char headerBuf[INIT_SIZE_256];
     int hdrWritten = snprintf(headerBuf, sizeof(headerBuf),
                               "LABEL %s\n"
                               "CREATEFRAME\n"
@@ -1491,33 +1563,41 @@ int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *label
         return Return99CodeGen(cg);
     }
 
-    //Nacitanie parametrov zo zasobnika
+    // Nacitanie parametrov zo zasobnika
     if (paramCount > 0) {
         int err = GenFuncParams(cg, params, paramCount);
-        if (err != 0) return err;
+        if (err != 0)
+            return err;
     }
 
     return 0;
 }
 
+/**
+ * @param cg ukazovatel na datovu strukturu generatora kodu
+ * @param bodyLeavesValue ma funkcia vracat hodnotu?
+ * @return 0 ak nedoslo k chybe, 99 ak doslo k chybe pri praci s pamatou
+ * @brief generacia kodu pre ukoncenie konstrukcie LAMBDAS
+ */
 int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue) {
-    if (cg == NULL || cg->lambdaDepth <= 0) {return Return99CodeGen(cg);}
+    if (cg == NULL || cg->lambdaDepth <= 0) {
+        return Return99CodeGen(cg);
+    }
 
-    //Ak lambda nenechava hodnotu na zasobniku, vraciame Unit
+    // Ak lambda nenechava hodnotu na zasobniku, vraciame Unit
     if (!bodyLeavesValue) {
         if (StrBufferAppend(&cg->funBody, "PUSHS nil@nil\n") != 0) {
             return Return99CodeGen(cg);
         }
     }
 
-    //Ukoncenie ramca a navrat do funkcie
-    if (StrBufferAppend(&cg->funBody,
-                         "POPFRAME\n"
-                         "RETURN\n") != 0) {
+    // Ukoncenie ramca a navrat do funkcie
+    if (StrBufferAppend(&cg->funBody, "POPFRAME\n"
+                                      "RETURN\n") != 0) {
         return Return99CodeGen(cg);
     }
 
-    //Pripojenie vygenerovanej hlavicky a tela lambdy k vystupu
+    // Pripojenie vygenerovanej hlavicky a tela lambdy k vystupu
     if (StrBufferAppend(&cg->out, cg->funHeader.data) != 0) {
         return Return99CodeGen(cg);
     }
@@ -1525,11 +1605,11 @@ int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue) {
         return Return99CodeGen(cg);
     }
 
-    //Uvolnenie struktury lambdy
+    // Uvolnenie struktury lambdy
     StrBufferFree(&cg->funHeader);
     StrBufferFree(&cg->funBody);
     if (cg->vars != NULL) {
-        
+
         for (int i = 0; i < cg->varCount; i++) {
             free(cg->vars[i].name);
             free(cg->vars[i].unique);
@@ -1541,7 +1621,7 @@ int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue) {
     cg->varCount = 0;
     cg->varCapacity = 0;
 
-    //Obnovenie stavu vonkajsej funkcie
+    // Obnovenie stavu vonkajsej funkcie
     cg->lambdaDepth--;
     LambdaSavedState *saved = &cg->lambdaStack[cg->lambdaDepth];
 
@@ -1551,14 +1631,12 @@ int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue) {
 
     cg->scopeDepth = saved->scopeDepth;
     if (cg->scopeDepth > 0) {
-        memcpy(cg->activeScopes, saved->activeScopes,
-               sizeof(int) * (size_t)cg->scopeDepth);
+        memcpy(cg->activeScopes, saved->activeScopes, sizeof(int) * (size_t)cg->scopeDepth);
     }
 
     cg->labelStackTop = saved->labelStackTop;
     if (cg->labelStackTop > 0) {
-        memcpy(cg->labelStack, saved->labelStack,
-               sizeof(int) * (size_t)cg->labelStackTop);
+        memcpy(cg->labelStack, saved->labelStack, sizeof(int) * (size_t)cg->labelStackTop);
     }
 
     cg->vars = saved->vars;
@@ -1566,7 +1644,7 @@ int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue) {
     cg->varCapacity = saved->varCapacity;
     cg->currentFunc = saved->currentFunc;
 
-    //cg->lambdaCounter neobnovujeme, aby ostal unikatny
+    // cg->lambdaCounter sa neobnovuje, aby ostal unikatny
 
     return 0;
 }

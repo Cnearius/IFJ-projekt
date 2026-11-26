@@ -12,6 +12,10 @@
 #include <stddef.h>
 
 #define INIT_SIZE 128
+#define INIT_SIZE_256 256
+#define INIT_SIZE_1024 1024
+#define INIT_SIZE_2048 2048
+
 #define LAMBDA_STACK_SIZE 8
 
 typedef struct {
@@ -83,7 +87,7 @@ int Return99CodeGen(codeGen *cg);
 /* ---------- Program a funkcie ---------- */
 int GenProlog(codeGen *cg);
 int GenFunStart(codeGen *cg, const char *funcName, bool isMain);
-int GenFunEnd(codeGen *cg, bool isMain,bool bodyLeavesValue);
+int GenFunEnd(codeGen *cg, bool isMain, bool bodyLeavesValue);
 int GenFuncParams(codeGen *cg, const char **params, int paramCount);
 int GenCall(codeGen *cg, const char *funcName);
 int GenReturn(codeGen *cg, bool hasReturnValue, bool isMain);
@@ -143,7 +147,8 @@ int GenBuiltinFloor(codeGen *cg);
 
 /* ---------- Rozsirenie LAMBDAS ---------- */
 int GenCallVar(codeGen *cg, const char *varName);
-int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut, size_t labelSize);
+int GenLambdaStart(codeGen *cg, const char **params, int paramCount, char *labelOut,
+                   size_t labelSize);
 int GenLambdaEnd(codeGen *cg, bool bodyLeavesValue);
 
 #endif
