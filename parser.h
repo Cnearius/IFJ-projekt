@@ -14,7 +14,8 @@
 /**
  * @brief Vykonanie syntaktickej analyzy celeho programu
  * @param lexer z ktoreho parser cita tokeny
- * @return 0 - OK, 1 - lexikalna chyba, 2 - syntakticka chyba, 99 - interna chyba
+ * @return 0 - OK, 1 - lexikalna chyba, 2 - syntakticka chyba, 99 - interna chyba, (3 az 10) kod
+ * semantickych chyb
  */
 int Parse(Lexer *lexer);
 
