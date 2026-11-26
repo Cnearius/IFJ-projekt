@@ -1684,7 +1684,8 @@ static int Expr(Parser *parser, typeId *outType) {
                 isCall = true;
                 sigCount = 0;
                 if (parser->genCode) {
-                    int sig = GetFunctionSignature(tokName, sigTypes, MAX_PARAMS, &sigCount, &sigRet);
+                    int sig =
+                        GetFunctionSignature(tokName, sigTypes, MAX_PARAMS, &sigCount, &sigRet);
                     if (sig == 99) {
                         return 99;
                     }
