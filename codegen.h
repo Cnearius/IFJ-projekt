@@ -12,6 +12,10 @@
 #include <stddef.h>
 
 #define INIT_SIZE 128
+#define INIT_SIZE_256 256
+#define INIT_SIZE_1024 1024
+#define INIT_SIZE_2048 2048
+
 #define LAMBDA_STACK_SIZE 8
 
 typedef struct {
