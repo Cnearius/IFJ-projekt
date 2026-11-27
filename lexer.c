@@ -459,30 +459,30 @@ int ReadString(Lexer *lexer, Token *token, TokenType type, size_t line, size_t c
                 break;
             }
 
-            if (character == '\\'){
+            if (character == '\\') {
                 LexerNextCharacter(lexer);
                 character = LexerPreviewCharacter(lexer);
-                switch (character){
-                    case 'n':
-                        character = '\n';
-                        break;
-                    case 'r':
-                        character = '\r';
-                        break;
-                    case 't':
-                        character = '\t';
-                        break;
-                    case '"':
-                        character = '"';
-                        break;
-                    case '\\':
-                        character = '\\';
-                        break;
-                    default:
-                        result = 1;
-                        break;
+                switch (character) {
+                case 'n':
+                    character = '\n';
+                    break;
+                case 'r':
+                    character = '\r';
+                    break;
+                case 't':
+                    character = '\t';
+                    break;
+                case '"':
+                    character = '"';
+                    break;
+                case '\\':
+                    character = '\\';
+                    break;
+                default:
+                    result = 1;
+                    break;
                 }
-                if (result != 0){
+                if (result != 0) {
                     break;
                 }
                 LexerNextCharacter(lexer);
@@ -490,7 +490,7 @@ int ReadString(Lexer *lexer, Token *token, TokenType type, size_t line, size_t c
                 character = LexerNextCharacter(lexer);
             }
             result = AddChar(&buffer, &length, &capacity, character);
-            if (result != 0){
+            if (result != 0) {
                 break;
             }
         }

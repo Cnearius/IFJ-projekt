@@ -64,8 +64,8 @@ TEST_BIN = lexer_test
 test: $(TEST_BIN)
 	./$(TEST_BIN)
 
-$(TEST_BIN): tests/lexer/lexer_test.cpp lexer/lexer.c lexer/lexer.h lexer/token.h
-	$(CC) $(CFLAGS) -c lexer/lexer.c -o lexer.o
+$(TEST_BIN): tests/lexer/lexer_test.cpp lexer.c lexer.h token.h
+	$(CC) $(CFLAGS) -c lexer.c -o lexer.o
 	g++ -std=c++17 -Wall -Wextra -g tests/lexer/lexer_test.cpp lexer.o -lgtest -lgtest_main -pthread -o $(TEST_BIN)
 
 # ===== Semanticke testy (C) =====
@@ -76,6 +76,6 @@ SEMANTIC_TEST_BIN = build/semantic_test
 semantic-test: $(SEMANTIC_TEST_BIN)
 	./$(SEMANTIC_TEST_BIN)
 
-$(SEMANTIC_TEST_BIN): tests/semantic/semantic_test.c semantic.c semantic.h symtable.c symtable.h types.h lexer/token.h
+$(SEMANTIC_TEST_BIN): tests/semantic/semantic_test.c semantic.c semantic.h symtable.c symtable.h types.h token.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -fsanitize=address,undefined tests/semantic/semantic_test.c semantic.c symtable.c -o $(SEMANTIC_TEST_BIN)
