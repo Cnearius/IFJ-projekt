@@ -10,7 +10,7 @@
 #include <gtest/gtest.h>
 #include <vector>
 extern "C" {
-#include "../../lexer/lexer.h"
+#include "../../lexer.h"
 }
 
 struct ExpectedToken {

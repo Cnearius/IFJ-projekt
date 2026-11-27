@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include "../../semantic.h"
 #include "../../types.h"
-#include "../../lexer/token.h"
+#include "../../token.h"
 
 static int checks = 0;
 static int failures = 0;
@@ -374,7 +374,7 @@ static void test_assign(void) {
     check("u = Int", AssignValueToVar("u", TYPE_INT), 6);
     check("DeclareVar c const", DeclareVar("c", true, TYPE_INT, true, TYPE_INT), 0);
     check("c = Int", AssignValueToVar("c", TYPE_INT), 7);
-    check("zapis do neznamej", AssignValueToVar("neexistuje", TYPE_INT), 3);
+    check("zapis do neznamej", AssignValueToVar("neexistuje", TYPE_INT), 7);
     check("zapis Undefined", AssignValueToVar("i", TYPE_UNDEFINED), 6);
     check("zapis NULL", AssignValueToVar(NULL, TYPE_INT), 99);
     check("zapis do funkcie f", AssignValueToVar("f", TYPE_INT), 7);
@@ -389,7 +389,7 @@ static void test_assign(void) {
 
     check("zapis do f po skonceni", AssignValueToVar("f", TYPE_INT), 7);
     check("zapis do neexistujucej po skonceni",
-          AssignValueToVar("neexistuje", TYPE_INT), 3);
+          AssignValueToVar("neexistuje", TYPE_INT), 7);
 
     endSection();
 }

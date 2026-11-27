@@ -75,9 +75,8 @@ static int bodyLambdaCount;
  * @return false pri zlyhani, true pri uspechu
  */
 static bool IncreaseTypeStoreSize(typeStore *types) {
-    int newCapacity = types->capacity == 0
-                          ? TYPE_STORE_INITIAL_CAPACITY
-                          : types->capacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
+    int newCapacity = types->capacity == 0 ? TYPE_STORE_INITIAL_CAPACITY
+                                           : types->capacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
     funcType *newTypes = realloc(types->functionTypes, (size_t)newCapacity * sizeof(funcType));
     if (newTypes == NULL)
         return false;
@@ -236,9 +235,8 @@ static int RegisterFunctionInfo(const char *name, bool hasExplicitReturn) {
         return 0;
     }
     if (functionCount == functionCapacity) {
-        int newCapacity = functionCapacity == 0
-                              ? FUNCTION_LIST_INITIAL_CAPACITY
-                              : functionCapacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
+        int newCapacity = functionCapacity == 0 ? FUNCTION_LIST_INITIAL_CAPACITY
+                                                : functionCapacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
         functionInfo *newList = realloc(functionList, (size_t)newCapacity * sizeof(functionInfo));
         if (newList == NULL)
             return 99;
@@ -371,16 +369,11 @@ int SemAnalysisInit(void) {
     static const typeId ordParams[] = {TYPE_STRING, TYPE_INT};
 
     static const builtInSpec builtIns[] = {
-        {"print", anyParam, 1, TYPE_UNIT},
-        {"readLine", NULL, 0, TYPE_STRING},
-        {"readInt", NULL, 0, TYPE_INT},
-        {"readDouble", NULL, 0, TYPE_DOUBLE},
-        {"toStr", anyParam, 1, TYPE_STRING},
-        {"toInt", doubleParam, 1, TYPE_INT},
-        {"strLength", stringParam, 1, TYPE_INT},
-        {"subStr", subStrParams, 3, TYPE_STRING},
-        {"ord", ordParams, 2, TYPE_INT},
-        {"chr", intParam, 1, TYPE_STRING},
+        {"print", anyParam, 1, TYPE_UNIT},       {"readLine", NULL, 0, TYPE_STRING},
+        {"readInt", NULL, 0, TYPE_INT},          {"readDouble", NULL, 0, TYPE_DOUBLE},
+        {"toStr", anyParam, 1, TYPE_STRING},     {"toInt", doubleParam, 1, TYPE_INT},
+        {"strLength", stringParam, 1, TYPE_INT}, {"subStr", subStrParams, 3, TYPE_STRING},
+        {"ord", ordParams, 2, TYPE_INT},         {"chr", intParam, 1, TYPE_STRING},
         {"readBoolean", NULL, 0, TYPE_BOOLEAN},
     };
 
@@ -819,9 +812,8 @@ int FuncBodyStart(const char *name, const char **paramNames, const typeId *param
  * @brief zvacsi pole lambda framov a pri zlyhani ostava pole aj kapacita bez zmeny
  */
 static bool IncreaseLambdaFrameStore(void) {
-    int newCapacity = lambdaFrameCapacity == 0
-                          ? LAMBDA_FRAME_INITIAL_CAPACITY
-                          : lambdaFrameCapacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
+    int newCapacity = lambdaFrameCapacity == 0 ? LAMBDA_FRAME_INITIAL_CAPACITY
+                                               : lambdaFrameCapacity * DYNAMIC_ARRAY_GROWTH_FACTOR;
     lambdaFrame *newFrames = realloc(lambdaFrames, (size_t)newCapacity * sizeof(lambdaFrame));
     if (newFrames == NULL)
         return false;

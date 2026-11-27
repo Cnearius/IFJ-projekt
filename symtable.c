@@ -417,8 +417,8 @@ bool InsertLocal(symTable *table, const char *key, symbolData data) {
  * @param key hladany kluc
  * @param out ukazovatel kam sa ulozi najdena hodnota
  * @return true ak sa premenna nasla, inak false
- * @brief vyhladava premennu od vrchu sasobnika po parentoch az kym nenajde prvy a ked je to lambda scope tak sa na 
- * konci vyhladavanie zastavi
+ * @brief vyhladava premennu od vrchu sasobnika po parentoch az kym nenajde prvy a ked je to lambda
+ * scope tak sa na konci vyhladavanie zastavi
  */
 bool LookupVar(symTable *table, const char *key, symbolData *out) {
     if (table == NULL)
